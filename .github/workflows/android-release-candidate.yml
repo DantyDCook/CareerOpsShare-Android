@@ -1,0 +1,169 @@
+name: Android Release Candidate
+run-name: Signed RC ${{ github.ref_name }} @ ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-release-candidate:
+    name: Build and verify signed release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Read Android version
+        id: version
+        shell: bash
+        run: |
+          VERSION_NAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
+          VERSION_CODE=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n 1)
+
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "Unable to read Android version from app/build.gradle.kts" >&2
+            exit 1
+          fi
+
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Verify release signing secrets
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.CAREEROPS_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CAREEROPS_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_KEY_PASSWORD }}
+        run: |
+          FAILED=0
+          for NAME in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!NAME}" ]; then
+              echo "Missing required signing secret backing $NAME" >&2
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "Configure the repository signing secrets documented in docs/SIGNING.md." >&2
+            exit 1
+          fi
+
+      - name: Materialize temporary signing keystore
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.CAREEROPS_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CAREEROPS_RELEASE_KEY_ALIAS }}
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/careerops-share-release.p12"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storetype PKCS12 \
+            -storepass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
+
+          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Test and build signed release APK
+        env:
+          CAREEROPS_RELEASE_STORE_FILE: ${{ steps.signing.outputs.keystore_path }}
+          CAREEROPS_RELEASE_STORE_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_STORE_PASSWORD }}
+          CAREEROPS_RELEASE_KEY_ALIAS: ${{ secrets.CAREEROPS_RELEASE_KEY_ALIAS }}
+          CAREEROPS_RELEASE_KEY_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon clean test assembleRelease
+
+      - name: Verify APK signature
+        id: verify
+        shell: bash
+        run: |
+          set -o pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+
+          if [ ! -f "$APK" ]; then
+            echo "Signed release APK was not produced at $APK" >&2
+            exit 1
+          fi
+
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee signing-verification.txt
+          CERT_SHA256=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' signing-verification.txt | head -n 1)
+
+          if [ -z "$CERT_SHA256" ]; then
+            echo "Unable to read signer SHA-256 fingerprint from apksigner output." >&2
+            exit 1
+          fi
+
+          echo "cert_sha256=$CERT_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release-candidate artifact
+        id: artifact
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version_name }}
+        run: |
+          OUT="CareerOpsShare-v${VERSION}-signed-rc.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$OUT"
+          sha256sum "$OUT" > "${OUT}.sha256"
+          echo "apk=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload signed release-candidate artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: careerops-share-v${{ steps.version.outputs.version_name }}-signed-rc
+          path: |
+            ${{ steps.artifact.outputs.apk }}
+            ${{ steps.artifact.outputs.apk }}.sha256
+            signing-verification.txt
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Write signing summary
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          CERT_SHA256: ${{ steps.verify.outputs.cert_sha256 }}
+        run: |
+          {
+            echo "## Signed Android release candidate"
+            echo
+            echo "- ✅ Branch/ref: \`$GITHUB_REF_NAME\`"
+            echo "- ✅ Commit: \`$GITHUB_SHA\`"
+            echo "- ✅ versionName: \`$VERSION\`"
+            echo "- ✅ versionCode: \`$VERSION_CODE\`"
+            echo "- ✅ Tests passed"
+            echo "- ✅ \`assembleRelease\` completed"
+            echo "- ✅ APK signature verified with \`apksigner\`"
+            echo "- 🔐 Signer SHA-256: \`$CERT_SHA256\`"
+            echo
+            echo "Download the workflow artifact, install it on the physical device, and complete docs/RELEASE_CHECKLIST.md."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/careerops-share-release.p12"
