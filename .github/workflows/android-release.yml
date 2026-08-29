@@ -1,22 +1,45 @@
 name: Android Release
+run-name: Release ${{ inputs.tag }} — preflight + publish
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag, for example v0.1.1'
+        description: 'Release tag, e.g. v0.2.0. Read docs/RELEASE_CHECKLIST.md first.'
         required: true
         type: string
+      confirm_pr_merged:
+        description: 'I confirm the release candidate changes are merged into main.'
+        required: true
+        default: false
+        type: boolean
+      confirm_device_validation:
+        description: 'I confirm the candidate was installed and smoke-tested on a physical device.'
+        required: true
+        default: false
+        type: boolean
+      confirm_validation_recorded:
+        description: 'I confirm VALIDATION.md records the result for this exact version.'
+        required: true
+        default: false
+        type: boolean
+      confirm_main_ci:
+        description: 'I confirm the newest Android CI run on main is green.'
+        required: true
+        default: false
+        type: boolean
+      confirm_checklist_reviewed:
+        description: 'I reviewed docs/RELEASE_CHECKLIST.md and the release notes/changelog.'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Build and publish APK
+    name: Preflight, build, and publish APK
     runs-on: ubuntu-latest
 
     steps:
@@ -25,43 +48,138 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify human release confirmations
+        shell: bash
+        env:
+          CONFIRM_PR_MERGED: ${{ inputs.confirm_pr_merged }}
+          CONFIRM_DEVICE_VALIDATION: ${{ inputs.confirm_device_validation }}
+          CONFIRM_VALIDATION_RECORDED: ${{ inputs.confirm_validation_recorded }}
+          CONFIRM_MAIN_CI: ${{ inputs.confirm_main_ci }}
+          CONFIRM_CHECKLIST_REVIEWED: ${{ inputs.confirm_checklist_reviewed }}
+        run: |
+          declare -A CHECKS=(
+            ["Release candidate changes merged into main"]="$CONFIRM_PR_MERGED"
+            ["Physical-device smoke validation completed"]="$CONFIRM_DEVICE_VALIDATION"
+            ["VALIDATION.md updated for this release"]="$CONFIRM_VALIDATION_RECORDED"
+            ["Android CI on main is green"]="$CONFIRM_MAIN_CI"
+            ["Release checklist and notes reviewed"]="$CONFIRM_CHECKLIST_REVIEWED"
+          )
+
+          FAILED=0
+          for LABEL in "${!CHECKS[@]}"; do
+            if [ "${CHECKS[$LABEL]}" != "true" ]; then
+              echo "Release confirmation missing: $LABEL" >&2
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "Complete docs/RELEASE_CHECKLIST.md, then start a new release run." >&2
+            exit 1
+          fi
+
+          echo "All human release confirmations passed."
+
+      - name: Verify workflow is running from current main
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Android Release must be started with 'Use workflow from: main'." >&2
+            echo "Current ref: $GITHUB_REF" >&2
+            exit 1
+          fi
+
+          git fetch origin main --quiet
+          HEAD_SHA=$(git rev-parse HEAD)
+          MAIN_SHA=$(git rev-parse origin/main)
+
+          if [ "$HEAD_SHA" != "$MAIN_SHA" ]; then
+            echo "Checked-out commit is not the current origin/main." >&2
+            echo "HEAD:        $HEAD_SHA" >&2
+            echo "origin/main: $MAIN_SHA" >&2
+            exit 1
+          fi
+
+          echo "main preflight passed: $HEAD_SHA"
+
       - name: Resolve release tag
         id: release_tag
         shell: bash
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          PUSH_TAG: ${{ github.ref_name }}
           MANUAL_TAG: ${{ inputs.tag }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TAG="$MANUAL_TAG"
-          else
-            TAG="$PUSH_TAG"
-          fi
+          TAG="$MANUAL_TAG"
 
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release tag: $TAG" >&2
+            echo "Expected form: vX.Y.Z, for example v0.2.0" >&2
             exit 1
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Verify tag matches Android versionName
+      - name: Verify Android version and validation record
         shell: bash
         env:
           EXPECTED_VERSION: ${{ steps.release_tag.outputs.version }}
+          TAG: ${{ steps.release_tag.outputs.tag }}
         run: |
           APP_VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
+          VERSION_CODE=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n 1)
+
           if [ -z "$APP_VERSION" ]; then
             echo "Unable to read versionName from app/build.gradle.kts" >&2
             exit 1
           fi
+
+          if [ -z "$VERSION_CODE" ]; then
+            echo "Unable to read a numeric versionCode from app/build.gradle.kts" >&2
+            exit 1
+          fi
+
           if [ "$APP_VERSION" != "$EXPECTED_VERSION" ]; then
             echo "Release tag version ($EXPECTED_VERSION) does not match app versionName ($APP_VERSION)." >&2
             exit 1
           fi
-          echo "Version check passed: $APP_VERSION"
+
+          if ! grep -Fq "## v${EXPECTED_VERSION}" VALIDATION.md; then
+            echo "VALIDATION.md does not contain a section for v${EXPECTED_VERSION}." >&2
+            echo "Complete validation and update VALIDATION.md before release." >&2
+            exit 1
+          fi
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            TAG_SHA=$(git rev-list -n 1 "$TAG")
+            if [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
+              echo "Existing tag $TAG points to a different commit." >&2
+              echo "Tag commit:     $TAG_SHA" >&2
+              echo "Release commit: $GITHUB_SHA" >&2
+              exit 1
+            fi
+            echo "Existing tag $TAG already points to this release commit."
+          fi
+
+          echo "Version preflight passed: versionName=$APP_VERSION versionCode=$VERSION_CODE tag=$TAG"
+
+      - name: Write preflight summary
+        shell: bash
+        env:
+          TAG: ${{ steps.release_tag.outputs.tag }}
+          VERSION: ${{ steps.release_tag.outputs.version }}
+        run: |
+          {
+            echo "## CareerOps Share release preflight"
+            echo
+            echo "- ✅ Source ref: \`main\`"
+            echo "- ✅ Current main commit: \`$GITHUB_SHA\`"
+            echo "- ✅ Release tag: \`$TAG\`"
+            echo "- ✅ Android versionName: \`$VERSION\`"
+            echo "- ✅ Human confirmations complete"
+            echo "- ✅ VALIDATION.md contains this release version"
+            echo
+            echo "Full process: [docs/RELEASE_CHECKLIST.md](../../blob/main/docs/RELEASE_CHECKLIST.md)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -111,3 +229,21 @@ jobs:
               --title "CareerOps Share $TAG" \
               --generate-notes
           fi
+
+      - name: Write release completion summary
+        shell: bash
+        env:
+          TAG: ${{ steps.release_tag.outputs.tag }}
+          APK: ${{ steps.assets.outputs.apk }}
+          SHA: ${{ steps.assets.outputs.sha }}
+        run: |
+          {
+            echo
+            echo "## Release published"
+            echo
+            echo "- ✅ GitHub Release: \`$TAG\`"
+            echo "- ✅ APK: \`$APK\`"
+            echo "- ✅ SHA-256 file: \`$SHA\`"
+            echo
+            echo "Complete the post-release verification section in docs/RELEASE_CHECKLIST.md."
+          } >> "$GITHUB_STEP_SUMMARY"
