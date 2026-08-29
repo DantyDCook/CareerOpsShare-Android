@@ -2,14 +2,14 @@
 
 CareerOps Share is the Android intake edge for the CareerOps job-application pipeline. It appears in the Android Sharesheet, converts a shared job posting into a structured CareerOps request, and sends that request through a user-selected local destination.
 
-**Current release candidate:** `0.2.0` on `main`  
-**Validated stable release:** `0.1.1`
+**Published release:** `0.2.0`  
+**Current signing work:** stable release-signing infrastructure on `chore/stable-release-signing`
 
-## v0.2 overview
+## v0.2 application overview
 
-v0.2 changes CareerOps Share from a ChatGPT-specific forwarding utility into a provider-neutral smart intake client.
+v0.2 changed CareerOps Share from a ChatGPT-specific forwarding utility into a provider-neutral smart intake client.
 
-It adds:
+It includes:
 
 - structured job intake,
 - LinkedIn/Indeed job-ID extraction,
@@ -25,7 +25,7 @@ It adds:
 - JVM unit tests,
 - architecture/request-schema documentation.
 
-v0.2 remains intentionally **local-only**. HTTP/API/Webhook delivery is designed into the boundary but not enabled yet.
+The app remains intentionally **local-only** in v0.2. HTTP/API/Webhook delivery is designed into the boundary but not enabled yet.
 
 ## User flow
 
@@ -45,46 +45,62 @@ flowchart LR
 
 ## CareerOps actions
 
-v0.2 supports:
-
 - **Analyze**
 - **Analyze + Build & Store**
 - **Analyze + Build & Store + Cover Letter**
 
-The selected action is stored locally as the next default.
+The selected action and destination are stored locally as defaults.
 
 ## Destinations
 
-v0.2 enabled destinations:
+Enabled destinations:
 
 - **ChatGPT** — direct Android package target.
 - **Choose Android app…** — standard Android chooser and therefore compatible with other apps that accept `ACTION_SEND`.
 
-The destination is stored independently from the CareerOps action.
+Future transport types can include explicitly supported Android AI clients, deep links/web clients, HTTP POST, webhooks, or the CareerOps Gateway.
 
-Future destinations can use other transport types without changing the intake model, including another explicitly supported Android AI client, deep link/web client, HTTP POST, webhook, or CareerOps Gateway.
+See [`docs/DESIGN.md`](docs/DESIGN.md) and [`docs/REQUEST_SCHEMA.md`](docs/REQUEST_SCHEMA.md).
 
-See [`docs/DESIGN.md`](docs/DESIGN.md).
+## Stable GitHub Release signing
 
-## Request contract
+The repository is moving GitHub Releases to one permanent CareerOps Share signing identity and signed **release APKs** instead of debug APKs.
 
-CareerOps Share creates a transport-neutral `CareerOpsRequest`.
-
-The text renderer preserves the compatibility trigger:
-
-```text
-Analyze this job using CareerOps:
+```mermaid
+flowchart LR
+    A[Permanent PKCS12 key] --> B[GitHub Actions secrets]
+    B --> C[Android Release Candidate]
+    C --> D[Signed RC APK]
+    D --> E[Physical-device validation]
+    E --> F[Merge release candidate]
+    F --> G[Guarded Android Release]
+    G --> H[Signed GitHub Release APK]
 ```
 
-and adds structured fields such as action, source, job ID, and canonical URL.
+The private keystore and passwords are never committed. Gradle reads signing credentials from environment variables supplied by GitHub Actions secrets. The workflow verifies the final APK with Android `apksigner` and reports the signer SHA-256 fingerprint.
 
-The same request can also be copied as JSON. See [`docs/REQUEST_SCHEMA.md`](docs/REQUEST_SCHEMA.md).
+Full setup and backup instructions:
 
-## Architecture rule
+[`docs/SIGNING.md`](docs/SIGNING.md)
 
-The Android client owns intake, CareerOps action, destination, and transport.
+Full release-candidate flow:
 
-The future CareerOps control plane/model broker should generally own final model selection. GPT, Claude, Gemini, local models, or future providers can then be changed or routed server-side without requiring a new Android application release.
+[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
+
+### Rollout order
+
+The signing workflows first have to exist on `main` so GitHub can expose **Android Release Candidate** as a manual workflow. After this infrastructure PR merges:
+
+1. create/back up the permanent key and configure GitHub Actions secrets,
+2. create the first stable-signing release-candidate branch (planned `0.2.1` / versionCode `4`),
+3. run **Android Release Candidate** from that branch,
+4. validate the signed APK on the physical device and record the signer fingerprint,
+5. merge the release candidate,
+6. run the guarded signed release workflow.
+
+### Signing-transition note
+
+The previous v0.1.1/v0.2.0 builds used debug signing. The first stable-signed APK will normally require a **one-time uninstall/reinstall** when crossing to the new permanent certificate. Future stable-signed versions can upgrade normally as long as the permanent keystore is preserved.
 
 ## Privacy / permissions
 
@@ -106,115 +122,83 @@ It only receives text explicitly shared by the user and sends/copies data after 
 - minSdk: 26
 - Java: 17+
 - Kotlin: AGP 9 built-in Kotlin
-- v0.2 versionCode: 3
-- v0.2 versionName: 0.2.0
+- current versionCode: 3
+- current versionName: 0.2.0
 
-## Build in Android Studio
+## Development build
 
-Use the current `main` branch for the release candidate:
-
-```bash
-git fetch origin
-git switch main
-git pull --ff-only origin main
-```
-
-Then in Android Studio:
-
-1. allow Gradle sync,
-2. use JDK 17+,
-3. keep Android SDK Platform 36 installed,
-4. build/run the `app` configuration on the device.
-
-CLI equivalent:
-
-```bash
-./gradlew clean test assembleDebug
-```
-
-Windows PowerShell:
+Normal development and CI continue to use debug builds and do not require the permanent signing key.
 
 ```powershell
 .\gradlew.bat clean test assembleDebug
 ```
 
-APK:
+Debug APK:
 
 ```text
-app/build/outputs/apk/debug/app-debug.apk
+app\build\outputs\apk\debug\app-debug.apk
 ```
+
+## Signed release-candidate build
+
+Once the signing infrastructure is merged and repository signing secrets are configured, the canonical signed RC is produced by:
+
+**Actions → Android Release Candidate → Run workflow**
+
+Select the release-candidate branch in **Use workflow from**. The workflow:
+
+1. runs tests,
+2. builds `assembleRelease`,
+3. signs with the permanent CareerOps Share key,
+4. verifies the APK with `apksigner`,
+5. reports the signer SHA-256 fingerprint,
+6. uploads a short-lived signed RC artifact for physical-device testing,
+7. does **not** create a tag or release.
+
+## GitHub Actions and Releases
+
+- `.github/workflows/android-ci.yml` — ordinary tests/debug build for pushes and PRs.
+- `.github/workflows/android-release-candidate.yml` — manual signed RC build for device validation.
+- `.github/workflows/android-release.yml` — guarded signed final release from current `main`.
+
+The final release workflow requires confirmations for:
+
+- PR merged,
+- signed physical-device validation,
+- `VALIDATION.md` updated,
+- green `main` CI,
+- permanent signer fingerprint verified,
+- checklist/release notes reviewed.
+
+It also automatically verifies the version/tag, signing secrets, keystore/alias, tests, signed `assembleRelease`, APK signature, SHA-256, and release assets.
+
+Final stable release assets use:
+
+```text
+CareerOpsShare-vX.Y.Z.apk
+CareerOpsShare-vX.Y.Z.apk.sha256
+CareerOpsShare-vX.Y.Z-signing-certificate.txt
+```
+
+Generated APKs and signing material belong outside Git history.
 
 ## Device acceptance checklist
 
 Test at minimum:
 
-- LinkedIn job share identifies LinkedIn.
-- LinkedIn job ID is extracted.
-- LinkedIn URL is canonicalized.
-- Indeed `jk` is extracted.
-- Indeed share/tracking noise is removed from the canonical URL.
-- **Analyze** renders correctly.
-- **Analyze + Build & Store** renders correctly.
-- **Analyze + Build & Store + Cover Letter** renders correctly.
-- selected action persists across launches.
-- selected destination persists across launches.
-- ChatGPT destination opens ChatGPT.
-- system chooser opens other Android destinations.
-- ChatGPT-unavailable flow falls back to chooser.
-- **Copy** copies the editable text request.
-- **Copy request JSON** copies schema v1.0 JSON.
-- existing Sharesheet receiver behavior remains functional.
+- CareerOps Share appears in Android Sharesheet.
+- LinkedIn source/job ID/canonical URL are correct.
+- Indeed source/`jk`/canonical URL are correct.
+- all three CareerOps actions regenerate correctly.
+- action preference persists.
+- destination preference persists.
+- ChatGPT destination launches ChatGPT.
+- system chooser works.
+- missing explicit app target falls back safely.
+- editable request can still be copied and sent.
+- JSON request can be copied.
 
-Record release-candidate results in [`VALIDATION.md`](VALIDATION.md).
-
-## Tests
-
-JVM unit tests live under:
-
-```text
-app/src/test/java/com/careerops/share/
-```
-
-Run:
-
-```bash
-./gradlew test
-```
-
-The Android-independent smoke test remains under `tools/ShareParserSmokeTest.kt`.
-
-## GitHub Actions and Releases
-
-- `.github/workflows/android-ci.yml` tests/builds pushes to `main` and pull requests targeting `main`.
-- `.github/workflows/android-release.yml` is the guarded manual release workflow. It performs release preflight checks, tests/builds the candidate, generates SHA-256, and publishes the APK to GitHub Releases.
-
-### Release candidate finalization
-
-**Before running Android Release, follow the full checklist:**
-
-[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
-
-The checklist contains:
-
-- a Mermaid release flowchart,
-- ordered PR/validation/testing/merge steps,
-- PowerShell verification commands,
-- physical-device install commands,
-- GitHub UI checks,
-- post-release verification.
-
-The **Android Release → Run workflow** form requires explicit confirmations for PR merge, physical-device validation, `VALIDATION.md`, green `main` CI, and checklist/release-note review.
-
-The workflow also rejects the release automatically if:
-
-- it is not started from current `main`,
-- the release tag does not match Android `versionName`,
-- `versionCode` is missing/invalid,
-- `VALIDATION.md` lacks the requested version,
-- an existing tag points to a different commit,
-- Gradle tests or APK build fail.
-
-Generated APKs belong in **GitHub Releases**, not Git history.
+Record candidate results and the signer SHA-256 fingerprint in [`VALIDATION.md`](VALIDATION.md).
 
 ## Roadmap
 
@@ -225,6 +209,10 @@ Android share → CareerOps payload → ChatGPT.
 ### v0.2.0 — smart intake + provider-neutral routing
 
 Structured intake, actions, destination profiles, local transports, JSON schema.
+
+### v0.2.1 — planned stable-signing transition
+
+Permanent release certificate, signed RC workflow, signed GitHub Release APKs.
 
 ### v0.3.0 — authenticated network transport
 
