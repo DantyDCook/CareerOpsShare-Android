@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — stable signing infrastructure
+## 0.2.1 — stable-signing transition
 
 - Added a permanent release-signing architecture for GitHub-distributed APKs.
 - Added environment-driven Gradle release signing with no credentials stored in source control.
@@ -13,7 +13,8 @@
 - Added PowerShell helper for generating/backing/configuring the permanent PKCS12 key.
 - Added signing-material ignore rules.
 - Added `docs/SIGNING.md` and updated the release-finalization flow for signed release candidates.
-- No application runtime behavior or version change in this infrastructure PR.
+- Bumped Android version to 0.2.1 / versionCode 4 for the first permanent-signing release.
+- No application runtime behavior changes.
 
 ## 0.2.0
 
