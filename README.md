@@ -1,26 +1,102 @@
-# CareerOps Share for Android — v0.1.1
+# CareerOps Share for Android
 
-A small Android share-target app that adds **CareerOps Share** to the Android Sharesheet.
+CareerOps Share is the Android intake edge for the CareerOps job-application pipeline. It appears in the Android Sharesheet, converts a shared job posting into a structured CareerOps request, and sends that request through a user-selected local destination.
 
-## What v0.1.1 does
+**Current development version:** `0.2.0` on `feature/v0.2-smart-intake`  
+**Validated stable baseline:** `0.1.1`
 
-1. Open a job post in LinkedIn, Indeed, Chrome, Glassdoor, etc.
-2. Tap **Share**.
-3. Select **CareerOps Share**.
-4. The app captures the shared title/text/URL and prepares:
+## v0.2 goals
 
-   `Analyze this job using CareerOps:`
+v0.2 changes CareerOps Share from a ChatGPT-specific forwarding utility into a provider-neutral smart intake client.
 
-   followed by the shared content.
-5. Review or edit the payload.
-6. Tap **Send to ChatGPT** to target the installed ChatGPT Android app directly.
-7. If ChatGPT is not installed, the app falls back to the Android Sharesheet.
+It adds:
 
-You can also copy the prepared payload or send it to another app.
+- structured job intake,
+- LinkedIn/Indeed job-ID extraction,
+- canonical URL generation,
+- safe tracking/share-parameter cleanup,
+- CareerOps action selection,
+- persistent local defaults,
+- destination profiles,
+- transport abstraction,
+- ChatGPT as one destination rather than a hard-coded architecture dependency,
+- Android system chooser as a first-class destination,
+- structured text and JSON request rendering,
+- JVM unit tests,
+- architecture/request-schema documentation.
+
+v0.2 remains intentionally **local-only**. HTTP/API/Webhook delivery is designed into the boundary but not enabled yet.
+
+## User flow
+
+```mermaid
+flowchart LR
+    A[Job post] --> B[Android Share]
+    B --> C[CareerOps Share]
+    C --> D[Detect source / job ID]
+    D --> E[Canonicalize job]
+    E --> F[Choose CareerOps action]
+    F --> G[Build CareerOpsRequest]
+    G --> H[Choose destination]
+    H --> I[ChatGPT]
+    H --> J[Other Android app]
+    H -. future .-> K[CareerOps Gateway]
+```
+
+## CareerOps actions
+
+v0.2 supports:
+
+- **Analyze**
+- **Analyze + Build & Store**
+- **Analyze + Build & Store + Cover Letter**
+
+The selected action is stored locally as the next default.
+
+## Destinations
+
+v0.2 enabled destinations:
+
+- **ChatGPT** — direct Android package target.
+- **Choose Android app…** — standard Android chooser and therefore compatible with other apps that accept `ACTION_SEND`.
+
+The destination is stored independently from the CareerOps action.
+
+Future destinations can use other transport types without changing the intake model, including another explicitly supported Android AI client, deep link/web client, HTTP POST, webhook, or CareerOps Gateway.
+
+See [`docs/DESIGN.md`](docs/DESIGN.md).
+
+## Request contract
+
+CareerOps Share now creates a transport-neutral `CareerOpsRequest`.
+
+The text renderer preserves the existing compatibility trigger:
+
+```text
+Analyze this job using CareerOps:
+```
+
+and adds structured fields such as action, source, job ID, and canonical URL.
+
+The same request can also be copied as JSON. See [`docs/REQUEST_SCHEMA.md`](docs/REQUEST_SCHEMA.md).
+
+## Architecture rule
+
+The Android client owns intake, CareerOps action, destination, and transport.
+
+The future CareerOps control plane/model broker should generally own final model selection. GPT, Claude, Gemini, local models, or future providers can then be changed or routed server-side without requiring a new Android application release.
 
 ## Privacy / permissions
 
-v0.1.1 has no INTERNET permission, no storage permission, no GitHub token, and no OpenAI API key. It only receives text explicitly shared to it and forwards/copies the text when you tap a button.
+v0.2 has:
+
+- no `INTERNET` permission,
+- no storage permission,
+- no GitHub credential,
+- no model-provider API key,
+- no background network task.
+
+It only receives text explicitly shared by the user and sends/copies data after a user action.
 
 ## Build configuration
 
@@ -29,103 +105,104 @@ v0.1.1 has no INTERNET permission, no storage permission, no GitHub token, and n
 - compileSdk / targetSdk: 36
 - minSdk: 26
 - Java: 17+
-- Kotlin support: AGP 9 built-in Kotlin
-
-### Wrapper note
-
-This source bundle includes a small dependency-free compatibility `gradle-wrapper.jar` compiled from source in `gradle/wrapper/bootstrap-src/`. It exists because the build environment that produced this ZIP could not download Gradle's official wrapper JAR directly.
-
-It downloads the pinned Gradle 9.5.0 binary distribution, verifies its SHA-256, unpacks it under `GRADLE_USER_HOME`, and launches Gradle. After your first successful Gradle run, replace it with Gradle's official generated wrapper files:
-
-```bash
-./gradlew wrapper --gradle-version 9.5.0
-./gradlew wrapper --gradle-version 9.5.0
-```
-
-Commit the resulting official `gradlew`, `gradlew.bat`, `gradle-wrapper.jar`, and `gradle-wrapper.properties` if you put this project in Git.
+- Kotlin: AGP 9 built-in Kotlin
+- v0.2 versionCode: 3
+- v0.2 versionName: 0.2.0
 
 ## Build in Android Studio
 
-1. Open the `CareerOpsShare` directory.
-2. Use a JDK 17+ Gradle JDK.
-3. Install Android SDK Platform 36 / Build Tools 36 if Android Studio prompts for them.
-4. Sync Gradle.
-5. Select the `app` run configuration and run on your Android device.
-
-## Command-line build
-
-With Android SDK 36 installed and `ANDROID_HOME` configured:
+For v0.2 development, check out:
 
 ```bash
-./gradlew assembleDebug
+git fetch origin
+git switch feature/v0.2-smart-intake
+git pull
 ```
 
-APK output:
+Then in Android Studio:
+
+1. allow Gradle sync,
+2. use JDK 17+,
+3. keep Android SDK Platform 36 installed,
+4. build/run the `app` configuration on the device.
+
+CLI equivalent:
+
+```bash
+./gradlew clean test assembleDebug
+```
+
+APK:
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-On Windows you can also run `build-debug.ps1` from PowerShell.
+## v0.2 device acceptance checklist
 
-Install with ADB:
+Test at minimum:
 
-```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+- LinkedIn job share identifies LinkedIn.
+- LinkedIn job ID is extracted.
+- LinkedIn URL is canonicalized.
+- Indeed `jk` is extracted.
+- Indeed share/tracking noise is removed from the canonical URL.
+- **Analyze** renders correctly.
+- **Analyze + Build & Store** renders correctly.
+- **Analyze + Build & Store + Cover Letter** renders correctly.
+- selected action persists across launches.
+- selected destination persists across launches.
+- ChatGPT destination opens ChatGPT.
+- system chooser opens other Android destinations.
+- ChatGPT-unavailable flow falls back to chooser.
+- **Copy** copies the editable text request.
+- **Copy request JSON** copies schema v1.0 JSON.
+- existing Sharesheet receiver behavior remains functional.
+
+Do not merge the v0.2 branch to `main` or tag `v0.2.0` until this device acceptance gate passes.
+
+## Tests
+
+JVM unit tests live under:
+
+```text
+app/src/test/java/com/careerops/share/
 ```
 
-## Manual test checklist
+Run:
 
-- Share a LinkedIn job URL and confirm **CareerOps Share** appears.
-- Confirm source displays as LinkedIn and the URL is detected.
-- Confirm the payload starts with `Analyze this job using CareerOps:`.
-- Tap **Send to ChatGPT** and confirm ChatGPT opens with the shared text.
-- Share an Indeed job and repeat.
-- Share plain text with no URL and confirm it still prepares a payload.
-- Test **Copy** and **Other app…**.
+```bash
+./gradlew test
+```
 
-## Included local checks
-
-`tools/ShareParserSmokeTest.kt` exercises LinkedIn, Indeed, generic URLs, punctuation trimming, and plain-text behavior without Android dependencies.
-
-## v0.2 direction
-
-Replace the ChatGPT forwarding transport with direct CareerOps ingestion (local gateway or authenticated HTTPS endpoint), while retaining this Android Sharesheet receiver as the phone-side entry point.
+The Android-independent smoke test remains under `tools/ShareParserSmokeTest.kt`.
 
 ## GitHub Actions and Releases
 
-This repository includes automated Android CI and GitHub Release publishing.
+- `.github/workflows/android-ci.yml` tests/builds pushes to `main` and pull requests targeting `main`.
+- `.github/workflows/android-release.yml` tests/builds a version tag and publishes the APK plus SHA-256 to GitHub Releases.
 
-### Continuous integration
+After v0.2 passes physical-device validation:
 
-`.github/workflows/android-ci.yml` runs on pushes and pull requests to `main` and can also be started manually. It:
+1. merge `feature/v0.2-smart-intake` to `main`,
+2. confirm CI passes on `main`,
+3. create/run release tag `v0.2.0`,
+4. verify the release APK on-device.
 
-1. sets up JDK 17,
-2. installs Android SDK Platform 36 / Build Tools 36.0.0,
-3. runs the Gradle tests,
-4. builds the debug APK, and
-5. uploads the APK as a temporary GitHub Actions artifact.
+## Roadmap
 
-### Publish a GitHub Release
+### v0.1.1 — validated transport baseline
 
-Releases are version-tag driven. Before releasing, update `versionName` and `versionCode` in `app/build.gradle.kts`, commit the change, and push it to `main`.
+Android share → CareerOps payload → ChatGPT.
 
-For example, to publish v0.1.1 from a local clone:
+### v0.2.0 — smart intake + provider-neutral routing
 
-```bash
-git tag v0.1.1
-git push origin v0.1.1
-```
+Structured intake, actions, destination profiles, local transports, JSON schema.
 
-The `Android Release` workflow will verify that tag `v0.1.1` matches Android `versionName = "0.1.1"`, run tests, build the APK, calculate its SHA-256 checksum, and publish these assets to the GitHub Release:
+### v0.3.0 — authenticated network transport
 
-```text
-CareerOpsShare-v0.1.1-debug.apk
-CareerOpsShare-v0.1.1-debug.apk.sha256
-```
+Planned: HTTPS POST/webhook transport, secure endpoint configuration, authentication, timeout/retry semantics, request IDs, acknowledgement/status handling, duplicate-submission protection, and optional offline queue.
 
-You can also open **GitHub → Actions → Android Release → Run workflow** and enter a tag such as `v0.1.1`. If that tag does not already exist, `gh release create` will create the release/tag at the workflow's commit.
+### Later — CareerOps control-plane integration
 
-### Release policy for the current prototype
-
-The current automation publishes the validated **debug APK**. This is appropriate for private/internal CareerOps testing. Before public distribution, add a dedicated Android release signing configuration and protect the signing keystore/passwords with GitHub Actions secrets.
+CareerOps Gateway → Agent Control Plane → Model Broker → selected worker model(s) → results.

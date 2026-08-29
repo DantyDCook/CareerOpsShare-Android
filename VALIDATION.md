@@ -1,46 +1,76 @@
-# v0.1.1 Validation Status
+# Validation Status
 
-CareerOps Share v0.1.1 reached the following validation state on 2026-08-29.
+## v0.2.0 — release candidate
 
-## Component validation
+Branch: `feature/v0.2-smart-intake`
 
-- PASS — `ShareParser.kt` compiles with the available Kotlin compiler.
-- PASS — LinkedIn source detection.
-- PASS — Indeed source detection.
-- PASS — generic job-site hostname fallback.
-- PASS — trailing URL punctuation cleanup.
-- PASS — plain-text shares without a URL.
-- PASS — lookalike-domain guard (`notlinkedin.com` is not classified as LinkedIn).
-- PASS — Android XML resources/manifest are well-formed XML.
-- PASS — compatibility `gradle-wrapper.jar` contains `org.gradle.wrapper.GradleWrapperMain`.
-- PASS — compatibility wrapper end-to-end smoke test, including SHA-256 verification, extraction, and process launch.
-- PASS — version/config assertions for v0.1.1, Gradle 9.5.0, `text/*` share target, and ChatGPT package routing.
+### Automated core validation
 
-## Android build validation
+- PASS — Android-independent parser/request smoke suite.
+- PASS — LinkedIn source/job-ID extraction.
+- PASS — LinkedIn canonical URL generation.
+- PASS — Indeed `jk` extraction.
+- PASS — Indeed canonical URL generation.
+- PASS — generic tracking cleanup.
+- PASS — lookalike-domain rejection.
+- PASS — structured CareerOps action rendering.
+- PASS — JSON schema rendering.
 
-- PASS — Android Studio successfully produced `app-debug.apk`.
-- PASS — build metadata reported application ID `com.careerops.share`.
-- PASS — build metadata reported `versionCode = 2` and `versionName = 0.1.1`.
-- PASS — build metadata reported debug variant and minimum dex SDK 26.
+### CI validation
 
-Validated APK SHA-256 from the successful local build:
+- PASS — Gradle unit tests.
+- PASS — debug APK compiled with Android SDK 36 / JDK 17.
+- PASS — pull-request GitHub Actions CI.
+- PASS — CI uploaded the generated debug APK artifact.
+
+### Physical-device validation
+
+- PASS — v0.2.0 was installed on the physical Android device over the existing app.
+- PASS — user-reported physical-device smoke/acceptance test: "Appears to be good."
+
+The release candidate retains the v0.2 acceptance checklist below for regression testing:
+
+- CareerOps Share appears in Android Sharesheet.
+- LinkedIn share source/job ID/canonical URL are correct.
+- Indeed share source/`jk`/canonical URL are correct.
+- all three CareerOps actions regenerate correctly.
+- action preference persists.
+- destination preference persists.
+- ChatGPT destination launches ChatGPT.
+- system chooser works.
+- missing explicit app target falls back safely.
+- editable request can still be copied and sent.
+- JSON request can be copied.
+- app installs/upgrades over v0.1.1.
+
+### Security assertions
+
+v0.2 retains:
+
+- no `INTERNET` permission,
+- no API/provider credentials,
+- no GitHub credential,
+- no background network submission.
+
+### Release gate
+
+v0.2.0 is cleared for merge to `main`. After merge, the `main` CI run must pass before the `v0.2.0` release workflow is started.
+
+---
+
+## v0.1.1 — validated baseline
+
+- PASS — Android Studio produced `app-debug.apk`.
+- PASS — application ID `com.careerops.share`.
+- PASS — `versionCode = 2`, `versionName = 0.1.1`.
+- PASS — physical Android device install/launch.
+- PASS — CareerOps Share appeared in Sharesheet.
+- PASS — shared job content was received and forwarded successfully to ChatGPT.
+- PASS — GitHub Actions build/release flow completed successfully.
+- PASS — v0.1.1 GitHub Release produced through automation.
+
+Validated local v0.1.1 APK SHA-256:
 
 ```text
 ff110f7f64a0abb0d650dc26e3dd6ba3502d382591c588c79e2add7379fe2eda
 ```
-
-## Physical device validation
-
-- PASS — APK installed and launched on a physical Android device.
-- PASS — CareerOps Share appeared in the Android Sharesheet.
-- PASS — shared job content was received by CareerOps Share.
-- PASS — the prepared CareerOps payload was forwarded successfully to ChatGPT.
-
-## CI / release automation
-
-The repository includes:
-
-- `.github/workflows/android-ci.yml` — builds and tests pushes and pull requests, then stores the debug APK as a temporary Actions artifact.
-- `.github/workflows/android-release.yml` — on a `v*` tag, tests and builds the APK, verifies the tag matches `versionName`, calculates SHA-256, and publishes both files to GitHub Releases.
-
-The first GitHub-hosted workflow run is a separate CI-environment acceptance gate and should be verified after this repository setup is committed.
