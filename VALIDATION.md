@@ -1,6 +1,6 @@
 # Validation Status
 
-## v0.2.0 — development branch
+## v0.2.0 — release candidate
 
 Branch: `feature/v0.2-smart-intake`
 
@@ -16,19 +16,21 @@ Branch: `feature/v0.2-smart-intake`
 - PASS — structured CareerOps action rendering.
 - PASS — JSON schema rendering.
 
-### Required CI validation
+### CI validation
 
-Before merge:
+- PASS — Gradle unit tests.
+- PASS — debug APK compiled with Android SDK 36 / JDK 17.
+- PASS — pull-request GitHub Actions CI.
+- PASS — CI uploaded the generated debug APK artifact.
 
-- Gradle unit tests pass.
-- Debug APK compiles with Android SDK 36 / JDK 17.
-- pull-request GitHub Actions CI passes.
+### Physical-device validation
 
-### Required physical-device validation
+- PASS — v0.2.0 was installed on the physical Android device over the existing app.
+- PASS — user-reported physical-device smoke/acceptance test: "Appears to be good."
 
-v0.2 must not be merged/tagged until:
+The release candidate retains the v0.2 acceptance checklist below for regression testing:
 
-- CareerOps Share still appears in Android Sharesheet.
+- CareerOps Share appears in Android Sharesheet.
 - LinkedIn share source/job ID/canonical URL are correct.
 - Indeed share source/`jk`/canonical URL are correct.
 - all three CareerOps actions regenerate correctly.
@@ -43,12 +45,16 @@ v0.2 must not be merged/tagged until:
 
 ### Security assertions
 
-v0.2 must retain:
+v0.2 retains:
 
 - no `INTERNET` permission,
 - no API/provider credentials,
 - no GitHub credential,
 - no background network submission.
+
+### Release gate
+
+v0.2.0 is cleared for merge to `main`. After merge, the `main` CI run must pass before the `v0.2.0` release workflow is started.
 
 ---
 
