@@ -1,11 +1,11 @@
 name: Android Release
-run-name: Release ${{ inputs.tag }} — preflight + publish
+run-name: Release ${{ inputs.tag }} — preflight + signed publish
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag, e.g. v0.2.0. Read docs/RELEASE_CHECKLIST.md first.'
+        description: 'Release tag, e.g. v0.2.1. Read docs/RELEASE_CHECKLIST.md first.'
         required: true
         type: string
       confirm_pr_merged:
@@ -14,7 +14,7 @@ on:
         default: false
         type: boolean
       confirm_device_validation:
-        description: 'I confirm the candidate was installed and smoke-tested on a physical device.'
+        description: 'I confirm the signed release candidate was installed and smoke-tested on a physical device.'
         required: true
         default: false
         type: boolean
@@ -25,6 +25,11 @@ on:
         type: boolean
       confirm_main_ci:
         description: 'I confirm the newest Android CI run on main is green.'
+        required: true
+        default: false
+        type: boolean
+      confirm_stable_signing:
+        description: 'I confirm the signed RC used the permanent CareerOps release key and its signer fingerprint was verified.'
         required: true
         default: false
         type: boolean
@@ -39,7 +44,7 @@ permissions:
 
 jobs:
   release:
-    name: Preflight, build, and publish APK
+    name: Preflight, build, verify, and publish signed APK
     runs-on: ubuntu-latest
 
     steps:
@@ -55,13 +60,15 @@ jobs:
           CONFIRM_DEVICE_VALIDATION: ${{ inputs.confirm_device_validation }}
           CONFIRM_VALIDATION_RECORDED: ${{ inputs.confirm_validation_recorded }}
           CONFIRM_MAIN_CI: ${{ inputs.confirm_main_ci }}
+          CONFIRM_STABLE_SIGNING: ${{ inputs.confirm_stable_signing }}
           CONFIRM_CHECKLIST_REVIEWED: ${{ inputs.confirm_checklist_reviewed }}
         run: |
           declare -A CHECKS=(
             ["Release candidate changes merged into main"]="$CONFIRM_PR_MERGED"
-            ["Physical-device smoke validation completed"]="$CONFIRM_DEVICE_VALIDATION"
+            ["Signed physical-device smoke validation completed"]="$CONFIRM_DEVICE_VALIDATION"
             ["VALIDATION.md updated for this release"]="$CONFIRM_VALIDATION_RECORDED"
             ["Android CI on main is green"]="$CONFIRM_MAIN_CI"
+            ["Permanent release signer fingerprint verified"]="$CONFIRM_STABLE_SIGNING"
             ["Release checklist and notes reviewed"]="$CONFIRM_CHECKLIST_REVIEWED"
           )
 
@@ -112,7 +119,7 @@ jobs:
 
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release tag: $TAG" >&2
-            echo "Expected form: vX.Y.Z, for example v0.2.0" >&2
+            echo "Expected form: vX.Y.Z, for example v0.2.1" >&2
             exit 1
           fi
 
@@ -120,6 +127,7 @@ jobs:
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Verify Android version and validation record
+        id: android_version
         shell: bash
         env:
           EXPECTED_VERSION: ${{ steps.release_tag.outputs.version }}
@@ -160,26 +168,29 @@ jobs:
             echo "Existing tag $TAG already points to this release commit."
           fi
 
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "Version preflight passed: versionName=$APP_VERSION versionCode=$VERSION_CODE tag=$TAG"
 
-      - name: Write preflight summary
+      - name: Verify release signing secrets
         shell: bash
         env:
-          TAG: ${{ steps.release_tag.outputs.tag }}
-          VERSION: ${{ steps.release_tag.outputs.version }}
+          KEYSTORE_B64: ${{ secrets.CAREEROPS_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CAREEROPS_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_KEY_PASSWORD }}
         run: |
-          {
-            echo "## CareerOps Share release preflight"
-            echo
-            echo "- ✅ Source ref: \`main\`"
-            echo "- ✅ Current main commit: \`$GITHUB_SHA\`"
-            echo "- ✅ Release tag: \`$TAG\`"
-            echo "- ✅ Android versionName: \`$VERSION\`"
-            echo "- ✅ Human confirmations complete"
-            echo "- ✅ VALIDATION.md contains this release version"
-            echo
-            echo "Full process: [docs/RELEASE_CHECKLIST.md](../../blob/main/docs/RELEASE_CHECKLIST.md)"
-          } >> "$GITHUB_STEP_SUMMARY"
+          FAILED=0
+          for NAME in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!NAME}" ]; then
+              echo "Missing required stable-signing secret backing $NAME" >&2
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "Configure the repository signing secrets documented in docs/SIGNING.md." >&2
+            exit 1
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -194,24 +205,104 @@ jobs:
         shell: bash
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Materialize temporary signing keystore
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.CAREEROPS_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CAREEROPS_RELEASE_KEY_ALIAS }}
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/careerops-share-release.p12"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storetype PKCS12 \
+            -storepass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
+
+          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Write preflight summary
+        shell: bash
+        env:
+          TAG: ${{ steps.release_tag.outputs.tag }}
+          VERSION: ${{ steps.release_tag.outputs.version }}
+          VERSION_CODE: ${{ steps.android_version.outputs.version_code }}
+        run: |
+          {
+            echo "## CareerOps Share release preflight"
+            echo
+            echo "- ✅ Source ref: \`main\`"
+            echo "- ✅ Current main commit: \`$GITHUB_SHA\`"
+            echo "- ✅ Release tag: \`$TAG\`"
+            echo "- ✅ Android versionName: \`$VERSION\`"
+            echo "- ✅ Android versionCode: \`$VERSION_CODE\`"
+            echo "- ✅ Human confirmations complete"
+            echo "- ✅ VALIDATION.md contains this release version"
+            echo "- ✅ Stable signing secrets are present and keystore opens"
+            echo
+            echo "Full process: [docs/RELEASE_CHECKLIST.md](../../blob/main/docs/RELEASE_CHECKLIST.md)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
-      - name: Test and build release candidate
-        run: ./gradlew --no-daemon clean test assembleDebug
+      - name: Test and build signed release APK
+        env:
+          CAREEROPS_RELEASE_STORE_FILE: ${{ steps.signing.outputs.keystore_path }}
+          CAREEROPS_RELEASE_STORE_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_STORE_PASSWORD }}
+          CAREEROPS_RELEASE_KEY_ALIAS: ${{ secrets.CAREEROPS_RELEASE_KEY_ALIAS }}
+          CAREEROPS_RELEASE_KEY_PASSWORD: ${{ secrets.CAREEROPS_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon clean test assembleRelease
+
+      - name: Verify APK signature
+        id: verify
+        shell: bash
+        run: |
+          set -o pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+
+          if [ ! -f "$APK" ]; then
+            echo "Signed release APK was not produced at $APK" >&2
+            exit 1
+          fi
+
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee signing-verification.txt
+          CERT_SHA256=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' signing-verification.txt | head -n 1)
+
+          if [ -z "$CERT_SHA256" ]; then
+            echo "Unable to read signer SHA-256 fingerprint from apksigner output." >&2
+            exit 1
+          fi
+
+          echo "cert_sha256=$CERT_SHA256" >> "$GITHUB_OUTPUT"
 
       - name: Prepare release assets
         id: assets
         shell: bash
         env:
           TAG: ${{ steps.release_tag.outputs.tag }}
+          CERT_SHA256: ${{ steps.verify.outputs.cert_sha256 }}
         run: |
-          APK="CareerOpsShare-${TAG}-debug.apk"
+          APK="CareerOpsShare-${TAG}.apk"
           SHA="${APK}.sha256"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          CERT="CareerOpsShare-${TAG}-signing-certificate.txt"
+
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
           sha256sum "$APK" > "$SHA"
+          {
+            echo "CareerOps Share $TAG"
+            echo "Signer certificate SHA-256: $CERT_SHA256"
+            echo "Source commit: $GITHUB_SHA"
+          } > "$CERT"
+
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "cert=$CERT" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
         shell: bash
@@ -220,11 +311,12 @@ jobs:
           TAG: ${{ steps.release_tag.outputs.tag }}
           APK: ${{ steps.assets.outputs.apk }}
           SHA: ${{ steps.assets.outputs.sha }}
+          CERT: ${{ steps.assets.outputs.cert }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" "$SHA" --clobber
+            gh release upload "$TAG" "$APK" "$SHA" "$CERT" --clobber
           else
-            gh release create "$TAG" "$APK" "$SHA" \
+            gh release create "$TAG" "$APK" "$SHA" "$CERT" \
               --target "$GITHUB_SHA" \
               --title "CareerOps Share $TAG" \
               --generate-notes
@@ -236,14 +328,23 @@ jobs:
           TAG: ${{ steps.release_tag.outputs.tag }}
           APK: ${{ steps.assets.outputs.apk }}
           SHA: ${{ steps.assets.outputs.sha }}
+          CERT: ${{ steps.assets.outputs.cert }}
+          CERT_SHA256: ${{ steps.verify.outputs.cert_sha256 }}
         run: |
           {
             echo
-            echo "## Release published"
+            echo "## Signed release published"
             echo
             echo "- ✅ GitHub Release: \`$TAG\`"
-            echo "- ✅ APK: \`$APK\`"
+            echo "- ✅ Signed APK: \`$APK\`"
             echo "- ✅ SHA-256 file: \`$SHA\`"
+            echo "- ✅ Signing certificate record: \`$CERT\`"
+            echo "- 🔐 Signer SHA-256: \`$CERT_SHA256\`"
             echo
             echo "Complete the post-release verification section in docs/RELEASE_CHECKLIST.md."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/careerops-share-release.p12"
