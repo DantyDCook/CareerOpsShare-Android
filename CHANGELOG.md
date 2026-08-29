@@ -1,6 +1,22 @@
 # Changelog
 
-## 0.2.0 — development
+## 0.2.1 — stable-signing transition
+
+- Added a permanent release-signing architecture for GitHub-distributed APKs.
+- Added environment-driven Gradle release signing with no credentials stored in source control.
+- Added a guard that prevents `assembleRelease` / `bundleRelease` from silently proceeding without release signing configuration.
+- Added `Android Release Candidate` workflow for signed, non-published physical-device testing.
+- Changed the guarded release workflow from `assembleDebug` to signed `assembleRelease`.
+- Added Android `apksigner` verification and signer SHA-256 reporting.
+- Added signed APK SHA-256 and signing-certificate record release assets.
+- Added four GitHub Actions signing-secret contracts.
+- Added PowerShell helper for generating/backing/configuring the permanent PKCS12 key.
+- Added signing-material ignore rules.
+- Added `docs/SIGNING.md` and updated the release-finalization flow for signed release candidates.
+- Bumped Android version to 0.2.1 / versionCode 4.
+- No application runtime behavior changes.
+
+## 0.2.0
 
 - Added `CareerOpsRequest` schema v1.0 as the transport-neutral handoff contract.
 - Added CareerOps action choices for Analyze, Analyze + Build & Store, and Analyze + Build & Store + Cover Letter.
