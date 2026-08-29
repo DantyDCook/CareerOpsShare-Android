@@ -2,10 +2,10 @@
 
 CareerOps Share is the Android intake edge for the CareerOps job-application pipeline. It appears in the Android Sharesheet, converts a shared job posting into a structured CareerOps request, and sends that request through a user-selected local destination.
 
-**Current development version:** `0.2.0` on `feature/v0.2-smart-intake`  
-**Validated stable baseline:** `0.1.1`
+**Current release candidate:** `0.2.0` on `main`  
+**Validated stable release:** `0.1.1`
 
-## v0.2 goals
+## v0.2 overview
 
 v0.2 changes CareerOps Share from a ChatGPT-specific forwarding utility into a provider-neutral smart intake client.
 
@@ -68,9 +68,9 @@ See [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Request contract
 
-CareerOps Share now creates a transport-neutral `CareerOpsRequest`.
+CareerOps Share creates a transport-neutral `CareerOpsRequest`.
 
-The text renderer preserves the existing compatibility trigger:
+The text renderer preserves the compatibility trigger:
 
 ```text
 Analyze this job using CareerOps:
@@ -111,12 +111,12 @@ It only receives text explicitly shared by the user and sends/copies data after 
 
 ## Build in Android Studio
 
-For v0.2 development, check out:
+Use the current `main` branch for the release candidate:
 
 ```bash
 git fetch origin
-git switch feature/v0.2-smart-intake
-git pull
+git switch main
+git pull --ff-only origin main
 ```
 
 Then in Android Studio:
@@ -132,13 +132,19 @@ CLI equivalent:
 ./gradlew clean test assembleDebug
 ```
 
+Windows PowerShell:
+
+```powershell
+.\gradlew.bat clean test assembleDebug
+```
+
 APK:
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## v0.2 device acceptance checklist
+## Device acceptance checklist
 
 Test at minimum:
 
@@ -159,7 +165,7 @@ Test at minimum:
 - **Copy request JSON** copies schema v1.0 JSON.
 - existing Sharesheet receiver behavior remains functional.
 
-Do not merge the v0.2 branch to `main` or tag `v0.2.0` until this device acceptance gate passes.
+Record release-candidate results in [`VALIDATION.md`](VALIDATION.md).
 
 ## Tests
 
@@ -180,14 +186,35 @@ The Android-independent smoke test remains under `tools/ShareParserSmokeTest.kt`
 ## GitHub Actions and Releases
 
 - `.github/workflows/android-ci.yml` tests/builds pushes to `main` and pull requests targeting `main`.
-- `.github/workflows/android-release.yml` tests/builds a version tag and publishes the APK plus SHA-256 to GitHub Releases.
+- `.github/workflows/android-release.yml` is the guarded manual release workflow. It performs release preflight checks, tests/builds the candidate, generates SHA-256, and publishes the APK to GitHub Releases.
 
-After v0.2 passes physical-device validation:
+### Release candidate finalization
 
-1. merge `feature/v0.2-smart-intake` to `main`,
-2. confirm CI passes on `main`,
-3. create/run release tag `v0.2.0`,
-4. verify the release APK on-device.
+**Before running Android Release, follow the full checklist:**
+
+[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
+
+The checklist contains:
+
+- a Mermaid release flowchart,
+- ordered PR/validation/testing/merge steps,
+- PowerShell verification commands,
+- physical-device install commands,
+- GitHub UI checks,
+- post-release verification.
+
+The **Android Release → Run workflow** form requires explicit confirmations for PR merge, physical-device validation, `VALIDATION.md`, green `main` CI, and checklist/release-note review.
+
+The workflow also rejects the release automatically if:
+
+- it is not started from current `main`,
+- the release tag does not match Android `versionName`,
+- `versionCode` is missing/invalid,
+- `VALIDATION.md` lacks the requested version,
+- an existing tag points to a different commit,
+- Gradle tests or APK build fail.
+
+Generated APKs belong in **GitHub Releases**, not Git history.
 
 ## Roadmap
 
