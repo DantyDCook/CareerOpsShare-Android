@@ -50,6 +50,52 @@ function Resolve-Keytool {
     throw "keytool was not found on PATH, JAVA_HOME, or common Android Studio JBR locations. In Android Studio check Help -> About / JDK location, or locate jbr\bin\keytool.exe and add its directory to PATH."
 }
 
+function Set-GitHubSecretExact {
+    param(
+        [Parameter(Mandatory)][string]$GhPath,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $GhPath
+    $startInfo.Arguments = "secret set $Name --repo $Repository"
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+
+    try {
+        if (-not $process.Start()) {
+            throw "Unable to start GitHub CLI while setting $Name."
+        }
+
+        # Write exact bytes represented by the PowerShell string; do not append a newline.
+        $process.StandardInput.Write($Value)
+        $process.StandardInput.Close()
+
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+
+        if ($process.ExitCode -ne 0) {
+            throw "Failed to set GitHub secret $Name. gh reported: $stderr"
+        }
+
+        if ($stdout) {
+            Write-Host $stdout.Trim()
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 $keytoolPath = Resolve-Keytool
 Write-Host "Using keytool: $keytoolPath" -ForegroundColor DarkGray
 
@@ -114,17 +160,10 @@ if ($ConfigureGitHubSecrets) {
     try {
         $keystoreBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($keystoreFullPath))
 
-        $keystoreBase64 | & $gh.Source secret set CAREEROPS_RELEASE_KEYSTORE_B64 --repo $Repository
-        if ($LASTEXITCODE -ne 0) { throw "Failed to set CAREEROPS_RELEASE_KEYSTORE_B64." }
-
-        $plainPassword | & $gh.Source secret set CAREEROPS_RELEASE_STORE_PASSWORD --repo $Repository
-        if ($LASTEXITCODE -ne 0) { throw "Failed to set CAREEROPS_RELEASE_STORE_PASSWORD." }
-
-        $Alias | & $gh.Source secret set CAREEROPS_RELEASE_KEY_ALIAS --repo $Repository
-        if ($LASTEXITCODE -ne 0) { throw "Failed to set CAREEROPS_RELEASE_KEY_ALIAS." }
-
-        $plainPassword | & $gh.Source secret set CAREEROPS_RELEASE_KEY_PASSWORD --repo $Repository
-        if ($LASTEXITCODE -ne 0) { throw "Failed to set CAREEROPS_RELEASE_KEY_PASSWORD." }
+        Set-GitHubSecretExact -GhPath $gh.Source -Name "CAREEROPS_RELEASE_KEYSTORE_B64" -Repository $Repository -Value $keystoreBase64
+        Set-GitHubSecretExact -GhPath $gh.Source -Name "CAREEROPS_RELEASE_STORE_PASSWORD" -Repository $Repository -Value $plainPassword
+        Set-GitHubSecretExact -GhPath $gh.Source -Name "CAREEROPS_RELEASE_KEY_ALIAS" -Repository $Repository -Value $Alias
+        Set-GitHubSecretExact -GhPath $gh.Source -Name "CAREEROPS_RELEASE_KEY_PASSWORD" -Repository $Repository -Value $plainPassword
     }
     finally {
         $plainPassword = $null
@@ -140,7 +179,7 @@ Write-Host ""
 Write-Host "NEXT STEPS" -ForegroundColor Cyan
 Write-Host "1. Back up the keystore in at least one second secure location."
 Write-Host "2. If secrets are not configured yet, follow docs/SIGNING.md."
-Write-Host "3. After the signing infrastructure is on main, run Android Release Candidate from the release-candidate branch."
+Write-Host "3. Run Android Release Candidate from release/v0.2.1-stable-signing."
 Write-Host "4. Compare the workflow signer SHA-256 fingerprint with this keystore."
 Write-Host ""
 Write-Host "Do not commit this keystore to Git." -ForegroundColor Yellow
