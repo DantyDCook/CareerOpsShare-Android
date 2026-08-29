@@ -3,7 +3,7 @@
 CareerOps Share is the Android intake edge for the CareerOps job-application pipeline. It appears in the Android Sharesheet, converts a shared job posting into a structured CareerOps request, and sends that request through a user-selected local destination.
 
 **Published release:** `0.2.0`  
-**Stable-signing transition candidate:** `0.2.1` on `chore/stable-release-signing`
+**Current signing work:** stable release-signing infrastructure on `chore/stable-release-signing`
 
 ## v0.2 application overview
 
@@ -64,7 +64,7 @@ See [`docs/DESIGN.md`](docs/DESIGN.md) and [`docs/REQUEST_SCHEMA.md`](docs/REQUE
 
 ## Stable GitHub Release signing
 
-Starting with the 0.2.1 signing transition, GitHub Releases use one permanent CareerOps Share signing identity and publish a signed **release APK** instead of a debug APK.
+The repository is moving GitHub Releases to one permanent CareerOps Share signing identity and signed **release APKs** instead of debug APKs.
 
 ```mermaid
 flowchart LR
@@ -72,7 +72,7 @@ flowchart LR
     B --> C[Android Release Candidate]
     C --> D[Signed RC APK]
     D --> E[Physical-device validation]
-    E --> F[Merge to main]
+    E --> F[Merge release candidate]
     F --> G[Guarded Android Release]
     G --> H[Signed GitHub Release APK]
 ```
@@ -86,6 +86,17 @@ Full setup and backup instructions:
 Full release-candidate flow:
 
 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
+
+### Rollout order
+
+The signing workflows first have to exist on `main` so GitHub can expose **Android Release Candidate** as a manual workflow. After this infrastructure PR merges:
+
+1. create/back up the permanent key and configure GitHub Actions secrets,
+2. create the first stable-signing release-candidate branch (planned `0.2.1` / versionCode `4`),
+3. run **Android Release Candidate** from that branch,
+4. validate the signed APK on the physical device and record the signer fingerprint,
+5. merge the release candidate,
+6. run the guarded signed release workflow.
 
 ### Signing-transition note
 
@@ -111,8 +122,8 @@ It only receives text explicitly shared by the user and sends/copies data after 
 - minSdk: 26
 - Java: 17+
 - Kotlin: AGP 9 built-in Kotlin
-- signing-transition versionCode: 4
-- signing-transition versionName: 0.2.1
+- current versionCode: 3
+- current versionName: 0.2.0
 
 ## Development build
 
@@ -130,7 +141,7 @@ app\build\outputs\apk\debug\app-debug.apk
 
 ## Signed release-candidate build
 
-The canonical signed RC is produced by GitHub after the repository signing secrets are configured:
+Once the signing infrastructure is merged and repository signing secrets are configured, the canonical signed RC is produced by:
 
 **Actions → Android Release Candidate → Run workflow**
 
@@ -199,7 +210,7 @@ Android share → CareerOps payload → ChatGPT.
 
 Structured intake, actions, destination profiles, local transports, JSON schema.
 
-### v0.2.1 — stable-signing transition
+### v0.2.1 — planned stable-signing transition
 
 Permanent release certificate, signed RC workflow, signed GitHub Release APKs.
 
