@@ -20,10 +20,38 @@ function ConvertFrom-SecureStringPlainText {
     }
 }
 
-$keytool = Get-Command keytool -ErrorAction SilentlyContinue
-if (-not $keytool) {
-    throw "keytool was not found on PATH. Use the JDK installed with Android Studio or install JDK 17+, then reopen PowerShell."
+function Resolve-Keytool {
+    $command = Get-Command keytool -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    $candidates = @()
+    if ($env:JAVA_HOME) {
+        $candidates += (Join-Path $env:JAVA_HOME "bin\keytool.exe")
+    }
+    if ($env:ProgramFiles) {
+        $candidates += (Join-Path $env:ProgramFiles "Android\Android Studio\jbr\bin\keytool.exe")
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $candidates += (Join-Path ${env:ProgramFiles(x86)} "Android\Android Studio\jbr\bin\keytool.exe")
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidates += (Join-Path $env:LOCALAPPDATA "Programs\Android Studio\jbr\bin\keytool.exe")
+        $candidates += (Join-Path $env:LOCALAPPDATA "Android\Sdk\jbr\bin\keytool.exe")
+    }
+
+    foreach ($candidate in $candidates | Select-Object -Unique) {
+        if ($candidate -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+
+    throw "keytool was not found on PATH, JAVA_HOME, or common Android Studio JBR locations. In Android Studio check Help -> About / JDK location, or locate jbr\bin\keytool.exe and add its directory to PATH."
 }
+
+$keytoolPath = Resolve-Keytool
+Write-Host "Using keytool: $keytoolPath" -ForegroundColor DarkGray
 
 $keystoreFullPath = [IO.Path]::GetFullPath($KeystorePath)
 $keystoreDirectory = Split-Path -Parent $keystoreFullPath
@@ -45,7 +73,7 @@ Write-Host "- For PKCS12, use the same password for the key and keystore."
 Write-Host "- This keystore becomes the permanent app signing identity."
 Write-Host ""
 
-& $keytool.Source `
+& $keytoolPath `
     -genkeypair `
     -v `
     -keystore $keystoreFullPath `
@@ -64,7 +92,7 @@ Write-Host ""
 Write-Host "Keystore created successfully." -ForegroundColor Green
 Write-Host ""
 Write-Host "Certificate details / SHA-256 fingerprint:" -ForegroundColor Cyan
-& $keytool.Source -list -v -keystore $keystoreFullPath -alias $Alias
+& $keytoolPath -list -v -keystore $keystoreFullPath -alias $Alias
 
 if ($LASTEXITCODE -ne 0) {
     throw "keytool could not read the generated keystore."
@@ -112,7 +140,7 @@ Write-Host ""
 Write-Host "NEXT STEPS" -ForegroundColor Cyan
 Write-Host "1. Back up the keystore in at least one second secure location."
 Write-Host "2. If secrets are not configured yet, follow docs/SIGNING.md."
-Write-Host "3. Run Actions -> Android Release Candidate from the signing-transition branch."
+Write-Host "3. After the signing infrastructure is on main, run Android Release Candidate from the release-candidate branch."
 Write-Host "4. Compare the workflow signer SHA-256 fingerprint with this keystore."
 Write-Host ""
 Write-Host "Do not commit this keystore to Git." -ForegroundColor Yellow
