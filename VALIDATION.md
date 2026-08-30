@@ -209,6 +209,7 @@ v0.2.0 is cleared for merge to `main`. After merge, the `main` CI run must pass 
 - PASS — CareerOps Share appeared in Sharesheet.
 - PASS — shared job content was received and forwarded successfully to ChatGPT.
 - PASS — GitHub Actions build/release flow completed successfully.
+- PASS — v0.1.1 GitHub Release produced through automation.
 
 Validated local v0.1.1 APK SHA-256:
 
