@@ -1,5 +1,106 @@
 # Validation Status
 
+## v0.3.0 — Direct Share / Preset Routing candidate
+
+Branch: `feature/v0.3.0-direct-share-presets`
+
+Expected Android version:
+
+- `versionName = 0.3.0`
+- `versionCode = 5`
+
+Expected permanent signer certificate SHA-256:
+
+```text
+e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
+```
+
+### Automated validation
+
+- PASS — first v0.3 implementation Android CI run #22 completed successfully.
+- PASS — Gradle unit tests cover preset-driven route planning and JSON/text request-profile selection.
+- PASS — debug APK compiled with Android SDK 36 / JDK 17 in CI.
+- PENDING — final/current-head Android CI after documentation/validation updates.
+- PENDING — signed `Android Release Candidate` build for v0.3.0 from this branch.
+- PENDING — signed RC `apksigner` fingerprint match against the established permanent signer.
+
+### Physical-device upgrade validation
+
+- PENDING — install signed v0.3.0 RC over the currently stable-signed v0.2.1 app using normal upgrade semantics (`adb install -r` or package installer update).
+- PENDING — confirm no uninstall/signature migration is required between v0.2.1 and v0.3.0.
+- PENDING — app launches normally after the in-place upgrade.
+
+### Interactive share regression
+
+- PENDING — ordinary **CareerOps Share** target still appears in the Android Sharesheet.
+- PENDING — with **Skip editor for normal shares** disabled, sharing opens the interactive editor.
+- PENDING — LinkedIn source/job ID/canonical URL are still correct.
+- PENDING — Indeed source/`jk`/canonical URL are still correct.
+- PENDING — prepared CareerOps Standard request renders correctly.
+- PENDING — CareerOps JSON request profile renders correctly.
+- PENDING — manual Send to ChatGPT works.
+- PENDING — Android system chooser works.
+
+### Preset persistence
+
+- PENDING — Quick Analyze preset loads `ANALYZE`.
+- PENDING — Build & Store preset loads `ANALYZE_BUILD_STORE`.
+- PENDING — Full Application preset loads `ANALYZE_BUILD_STORE_COVER_LETTER`.
+- PENDING — action changes persist after **Save preset**.
+- PENDING — destination changes persist after **Save preset**.
+- PENDING — request-profile changes persist after **Save preset**.
+- PENDING — model-preference changes persist after **Save preset** without claiming to switch the target app's internal model.
+- PENDING — selected default preset persists across app restart.
+- PENDING — Direct Share visibility setting persists across app restart.
+
+### Normal-share fast path
+
+- PENDING — enable **Skip editor for normal shares (use default preset)**.
+- PENDING — share a job through the ordinary CareerOps Share app target.
+- PENDING — editor is skipped and the saved default preset routes immediately.
+- PENDING — routed request contains the default preset's expected CareerOps action.
+- PENDING — disabling the setting restores the interactive editor path.
+
+### Android Direct Share / Sharing Shortcuts
+
+- PENDING — enabled Quick Analyze / Build & Store / Full Application shortcuts are published after app launch.
+- PENDING — CareerOps preset targets appear in the Android Direct Share row where supported by the device/launcher.
+- PENDING — Quick Analyze Direct Share routes without showing the editor in the normal success path.
+- PENDING — Build & Store Direct Share routes `ANALYZE_BUILD_STORE`.
+- PENDING — Full Application Direct Share routes `ANALYZE_BUILD_STORE_COVER_LETTER`.
+- PENDING — disabling **Show selected preset in Android Direct Share** removes that dynamic shortcut after republish/system refresh.
+
+### Failure fallback
+
+- PENDING — configure/use a route whose explicit destination cannot be completed.
+- PENDING — immediate routing failure preserves the original incoming share and opens the interactive editor rather than losing the request.
+- PENDING — user can select another destination and send successfully.
+
+### Security assertions
+
+v0.3 must retain:
+
+- no `INTERNET` permission,
+- no API/provider credentials,
+- no GitHub credential,
+- no background network submission,
+- no signing key material in source control.
+
+### UI backlog decision
+
+The following are tracked separately and are not yet part of the Direct Share acceptance gate unless explicitly pulled into this release:
+
+- issue #5 — theme controls / optional scheduled theme,
+- issue #6 — edge-to-edge and status/navigation-bar behavior.
+
+### Release gate
+
+Release gate: PENDING
+
+Do not merge/release v0.3.0 until current-head CI, permanent-signed RC generation, in-place upgrade validation, preset/Direct Share behavior, failure fallback, signer match, and this validation record are complete.
+
+---
+
 ## v0.2.1 — stable-signing release candidate
 
 Branch: `release/v0.2.1-stable-signing`
@@ -108,7 +209,6 @@ v0.2.0 is cleared for merge to `main`. After merge, the `main` CI run must pass 
 - PASS — CareerOps Share appeared in Sharesheet.
 - PASS — shared job content was received and forwarded successfully to ChatGPT.
 - PASS — GitHub Actions build/release flow completed successfully.
-- PASS — v0.1.1 GitHub Release produced through automation.
 
 Validated local v0.1.1 APK SHA-256:
 
