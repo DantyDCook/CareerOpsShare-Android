@@ -11,33 +11,60 @@ object AppPreferences {
     private const val KEY_DESTINATION = "default_destination"
 
     private const val KEY_V03_MIGRATED = "v03_preset_migration_complete"
+    private const val KEY_DIRECT_SHARE_CURATION_MIGRATED = "v03_direct_share_curation_complete"
     private const val KEY_DEFAULT_PRESET = "default_preset_id"
     private const val KEY_DIRECT_SHARE_ENABLED = "direct_share_enabled"
+    private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_SYSTEM_BAR_MODE = "system_bar_mode"
     private const val PRESET_PREFIX = "preset."
 
     fun ensureV03Migration(context: Context) {
         val prefs = preferences(context)
-        if (prefs.getBoolean(KEY_V03_MIGRATED, false)) return
-
-        val legacyAction = CareerOpsAction.fromId(
-            prefs.getString(KEY_ACTION, CareerOpsAction.ANALYZE.id)
-        )
-        val legacyDestination = DestinationCatalog.fromId(
-            prefs.getString(KEY_DESTINATION, DestinationCatalog.CHATGPT.id)
-        )
-
-        savePreset(
-            context,
-            PresetCatalog.QUICK_ANALYZE.copy(
-                action = legacyAction,
-                destinationId = legacyDestination.id
+        if (!prefs.getBoolean(KEY_V03_MIGRATED, false)) {
+            val legacyAction = CareerOpsAction.fromId(
+                prefs.getString(KEY_ACTION, CareerOpsAction.ANALYZE.id)
             )
-        )
+            val legacyDestination = DestinationCatalog.fromId(
+                prefs.getString(KEY_DESTINATION, DestinationCatalog.CHATGPT.id)
+            )
+
+            savePreset(
+                context,
+                PresetCatalog.QUICK_ANALYZE.copy(
+                    action = legacyAction,
+                    destinationId = legacyDestination.id
+                )
+            )
+
+            prefs.edit()
+                .putString(KEY_DEFAULT_PRESET, PresetCatalog.QUICK_ANALYZE.id)
+                .putBoolean(KEY_DIRECT_SHARE_ENABLED, false)
+                .putBoolean(KEY_V03_MIGRATED, true)
+                .apply()
+        }
+
+        ensureDirectShareCurationMigration(context)
+    }
+
+    private fun ensureDirectShareCurationMigration(context: Context) {
+        val prefs = preferences(context)
+        if (prefs.getBoolean(KEY_DIRECT_SHARE_CURATION_MIGRATED, false)) return
+
+        // The first routing RC published all built-ins by default. Curate the
+        // fast-action surface on upgrade: Quick Analyze stays pinned; the more
+        // consequential presets remain available in-app but become explicit opt-ins.
+        PresetCatalog.builtIns.forEach { definition ->
+            val current = loadPreset(context, definition.id)
+            savePreset(
+                context,
+                current.copy(
+                    showInDirectShare = definition.id == PresetCatalog.QUICK_ANALYZE.id
+                )
+            )
+        }
 
         prefs.edit()
-            .putString(KEY_DEFAULT_PRESET, PresetCatalog.QUICK_ANALYZE.id)
-            .putBoolean(KEY_DIRECT_SHARE_ENABLED, false)
-            .putBoolean(KEY_V03_MIGRATED, true)
+            .putBoolean(KEY_DIRECT_SHARE_CURATION_MIGRATED, true)
             .apply()
     }
 
@@ -106,6 +133,28 @@ object AppPreferences {
     fun saveDirectShareEnabled(context: Context, enabled: Boolean) {
         preferences(context).edit()
             .putBoolean(KEY_DIRECT_SHARE_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadThemeMode(context: Context): AppThemeMode =
+        AppThemeMode.fromId(
+            preferences(context).getString(KEY_THEME_MODE, AppThemeMode.FOLLOW_SYSTEM.id)
+        )
+
+    fun saveThemeMode(context: Context, mode: AppThemeMode) {
+        preferences(context).edit()
+            .putString(KEY_THEME_MODE, mode.id)
+            .apply()
+    }
+
+    fun loadSystemBarMode(context: Context): SystemBarMode =
+        SystemBarMode.fromId(
+            preferences(context).getString(KEY_SYSTEM_BAR_MODE, SystemBarMode.SAFE_INSETS.id)
+        )
+
+    fun saveSystemBarMode(context: Context, mode: SystemBarMode) {
+        preferences(context).edit()
+            .putString(KEY_SYSTEM_BAR_MODE, mode.id)
             .apply()
     }
 
