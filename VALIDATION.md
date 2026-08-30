@@ -20,15 +20,15 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 - PASS — first v0.3 implementation Android CI run #22 completed successfully.
 - PASS — Gradle unit tests cover preset-driven route planning and JSON/text request-profile selection.
 - PASS — debug APK compiled with Android SDK 36 / JDK 17 in CI.
-- PENDING — final/current-head Android CI after documentation/validation updates.
-- PENDING — signed `Android Release Candidate` build for v0.3.0 from this branch.
-- PENDING — signed RC `apksigner` fingerprint match against the established permanent signer.
+- PASS — current-head Android CI #27 completed successfully on commit `61e8b08062eb0b42693da690f024ff7bb711d8f7` before signed-RC device testing.
+- PENDING — signed `Android Release Candidate` build metadata/fingerprint independently verified in the repository record.
+- PENDING — signed RC `apksigner` fingerprint match against the established permanent signer independently recorded for v0.3.0.
 
 ### Physical-device upgrade validation
 
-- PENDING — install signed v0.3.0 RC over the currently stable-signed v0.2.1 app using normal upgrade semantics (`adb install -r` or package installer update).
-- PENDING — confirm no uninstall/signature migration is required between v0.2.1 and v0.3.0.
-- PENDING — app launches normally after the in-place upgrade.
+- PASS — signed v0.3.0 RC installed over the stable-signed v0.2.1 app using the Android package installer update path.
+- PASS — no uninstall/signature migration was required between v0.2.1 and v0.3.0.
+- PASS — app launched normally after the in-place upgrade; v0.3 preset-routing UI displayed successfully.
 
 ### Interactive share regression
 
@@ -76,6 +76,13 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 - PENDING — immediate routing failure preserves the original incoming share and opens the interactive editor rather than losing the request.
 - PENDING — user can select another destination and send successfully.
 
+### UI / system-insets observation
+
+- FAIL/OPEN — v0.3.0 RC demonstrates status-bar/content overlap while scrolling: visible Android status-bar icons/text can sit over app title, labels, and controls.
+- TRACKED — issue #8, **Bug: Status bar overlays scrolling content in v0.3.0**.
+- RELATED — issue #6, **Feature: Edge-to-edge UI and configurable system-bar behavior**.
+- PLAN — implement #6 and #8 together in a dedicated UI/system-insets branch if the fix remains contained enough for v0.3.0; otherwise move them into the immediate UI follow-up release without destabilizing Direct Share routing.
+
 ### Security assertions
 
 v0.3 must retain:
@@ -88,16 +95,17 @@ v0.3 must retain:
 
 ### UI backlog decision
 
-The following are tracked separately and are not yet part of the Direct Share acceptance gate unless explicitly pulled into this release:
+The following UI work is tracked separately from the routing core:
 
 - issue #5 — theme controls / optional scheduled theme,
-- issue #6 — edge-to-edge and status/navigation-bar behavior.
+- issue #6 — edge-to-edge and status/navigation-bar behavior,
+- issue #8 — concrete v0.3.0 scrolling/status-bar overlap regression.
 
 ### Release gate
 
 Release gate: PENDING
 
-Do not merge/release v0.3.0 until current-head CI, permanent-signed RC generation, in-place upgrade validation, preset/Direct Share behavior, failure fallback, signer match, and this validation record are complete.
+Do not merge/release v0.3.0 until signed-RC metadata/fingerprint verification, preset/Direct Share behavior, failure fallback, and this validation record are complete. The v0.3.0 in-place permanent-signing upgrade itself is confirmed PASS. Resolve or explicitly defer the #6/#8 UI regression before release approval.
 
 ---
 
