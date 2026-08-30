@@ -14,10 +14,58 @@ enum class CareerOpsAction(val id: String, val displayName: String) {
     }
 }
 
+enum class ModelPreference(val id: String, val displayName: String) {
+    AUTO("AUTO", "Auto / destination default"),
+    FRONTIER("FRONTIER", "Frontier / highest capability"),
+    FAST("FAST", "Fast / low latency"),
+    ECONOMY("ECONOMY", "Economy / low cost");
+
+    companion object {
+        fun fromId(id: String?): ModelPreference =
+            entries.firstOrNull { it.id == id } ?: AUTO
+    }
+}
+
+enum class RequestProfile(val id: String, val displayName: String) {
+    CAREEROPS_STANDARD("careerops_standard", "CareerOps Standard"),
+    CAREEROPS_JSON("careerops_json", "CareerOps JSON");
+
+    companion object {
+        fun fromId(id: String?): RequestProfile =
+            entries.firstOrNull { it.id == id } ?: CAREEROPS_STANDARD
+    }
+}
+
+enum class AppThemeMode(val id: String, val displayName: String) {
+    FOLLOW_SYSTEM("FOLLOW_SYSTEM", "Follow Android system"),
+    LIGHT("LIGHT", "Light"),
+    DARK("DARK", "Dark");
+
+    companion object {
+        fun fromId(id: String?): AppThemeMode =
+            entries.firstOrNull { it.id == id } ?: FOLLOW_SYSTEM
+    }
+}
+
+enum class SystemBarMode(val id: String, val displayName: String) {
+    SAFE_INSETS("SAFE_INSETS", "Standard / keep content clear of system bars"),
+    IMMERSIVE("IMMERSIVE", "Immersive / swipe to reveal system bars");
+
+    companion object {
+        fun fromId(id: String?): SystemBarMode =
+            entries.firstOrNull { it.id == id } ?: SAFE_INSETS
+    }
+}
+
 enum class TransportType {
     ANDROID_APP,
     ANDROID_CHOOSER,
     HTTP_POST
+}
+
+enum class ModelRoutingCapability {
+    DESTINATION_DEFAULT,
+    ENFORCED
 }
 
 data class DestinationProfile(
@@ -26,7 +74,8 @@ data class DestinationProfile(
     val transportType: TransportType,
     val packageName: String? = null,
     val endpointUrl: String? = null,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val modelRoutingCapability: ModelRoutingCapability = ModelRoutingCapability.DESTINATION_DEFAULT
 )
 
 object DestinationCatalog {
@@ -43,12 +92,13 @@ object DestinationCatalog {
         transportType = TransportType.ANDROID_CHOOSER
     )
 
-    // Contract placeholder only. Networking remains deliberately disabled in v0.2.0.
+    // Contract placeholder only. Networking remains deliberately disabled in v0.3.0.
     val CAREEROPS_GATEWAY_FUTURE = DestinationProfile(
         id = "careerops_gateway",
         displayName = "CareerOps Gateway (future)",
         transportType = TransportType.HTTP_POST,
-        enabled = false
+        enabled = false,
+        modelRoutingCapability = ModelRoutingCapability.ENFORCED
     )
 
     fun localDestinations(): List<DestinationProfile> =
@@ -56,6 +106,54 @@ object DestinationCatalog {
 
     fun fromId(id: String?): DestinationProfile =
         localDestinations().firstOrNull { it.id == id } ?: CHATGPT
+}
+
+data class CareerOpsPreset(
+    val id: String,
+    val name: String,
+    val action: CareerOpsAction,
+    val destinationId: String,
+    val modelPreference: ModelPreference = ModelPreference.AUTO,
+    val requestProfile: RequestProfile = RequestProfile.CAREEROPS_STANDARD,
+    val autoForward: Boolean = true,
+    val showInDirectShare: Boolean = false
+)
+
+object PresetCatalog {
+    const val MAX_DIRECT_SHARE_PRESETS = 2
+
+    val QUICK_ANALYZE = CareerOpsPreset(
+        id = "quick-analyze",
+        name = "Quick Analyze",
+        action = CareerOpsAction.ANALYZE,
+        destinationId = DestinationCatalog.CHATGPT.id,
+        showInDirectShare = true
+    )
+
+    val BUILD_STORE = CareerOpsPreset(
+        id = "build-store",
+        name = "Build & Store",
+        action = CareerOpsAction.ANALYZE_BUILD_STORE,
+        destinationId = DestinationCatalog.CHATGPT.id,
+        showInDirectShare = false
+    )
+
+    val FULL_APPLICATION = CareerOpsPreset(
+        id = "full-application",
+        name = "Full Application",
+        action = CareerOpsAction.ANALYZE_BUILD_STORE_COVER_LETTER,
+        destinationId = DestinationCatalog.CHATGPT.id,
+        showInDirectShare = false
+    )
+
+    val builtIns: List<CareerOpsPreset> =
+        listOf(QUICK_ANALYZE, BUILD_STORE, FULL_APPLICATION)
+
+    fun fromIdOrNull(id: String?): CareerOpsPreset? =
+        builtIns.firstOrNull { it.id == id }
+
+    fun fromId(id: String?): CareerOpsPreset =
+        fromIdOrNull(id) ?: QUICK_ANALYZE
 }
 
 data class JobShareIntake(
