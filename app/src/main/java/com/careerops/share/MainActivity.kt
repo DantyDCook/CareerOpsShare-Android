@@ -474,7 +474,6 @@ class MainActivity : Activity() {
         val systemBarSpinner = spinner(systemBarModes.map { it.displayName })
         val currentSystemBarMode = AppPreferences.loadSystemBarMode(this)
         systemBarSpinner.setSelection(systemBarModes.indexOf(currentSystemBarMode).coerceAtLeast(0), false)
-        var initializingSystemBarSpinner = true
         systemBarSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>?,
@@ -482,11 +481,9 @@ class MainActivity : Activity() {
                 position: Int,
                 id: Long
             ) {
-                if (initializingSystemBarSpinner) {
-                    initializingSystemBarSpinner = false
-                    return
-                }
                 val selected = systemBarModes.getOrElse(position) { SystemBarMode.SAFE_INSETS }
+                if (selected == AppPreferences.loadSystemBarMode(this@MainActivity)) return
+
                 AppPreferences.saveSystemBarMode(this@MainActivity, selected)
                 SystemUiController.apply(
                     activity = this@MainActivity,
@@ -527,7 +524,7 @@ class MainActivity : Activity() {
         pinCheckBox: CheckBox
     ) {
         val stored = AppPreferences.loadPreset(this, currentPresetId)
-        val currentlyPinned = AppPreferences.loadPresets().count { it.showInDirectShare }
+        val currentlyPinned = AppPreferences.loadPresets(this).count { it.showInDirectShare }
         val wantsNewPin = pinCheckBox.isChecked && !stored.showInDirectShare
 
         if (wantsNewPin && currentlyPinned >= PresetCatalog.MAX_DIRECT_SHARE_PRESETS) {
