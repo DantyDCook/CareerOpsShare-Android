@@ -6,14 +6,14 @@ data class RegularShareDefaults(
     val modelPreference: ModelPreference = ModelPreference.AUTO,
     val requestProfile: RequestProfile = RequestProfile.CAREEROPS_STANDARD
 ) {
-    fun asSessionPreset(): CareerOpsPreset = CareerOpsPreset(
+    fun asSessionPreset(autoForward: Boolean = false): CareerOpsPreset = CareerOpsPreset(
         id = SESSION_PRESET_ID,
         name = "Regular Share",
         action = action,
         destinationId = destinationId,
         modelPreference = modelPreference,
         requestProfile = requestProfile,
-        autoForward = false,
+        autoForward = autoForward,
         showInDirectShare = false
     )
 
