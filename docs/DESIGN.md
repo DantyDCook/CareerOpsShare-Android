@@ -2,94 +2,192 @@
 
 ## Purpose
 
-CareerOps Share is the Android-side intake edge for CareerOps. It receives content explicitly shared by the user, normalizes job metadata, creates a versioned CareerOps request, and routes the rendered request to a user-selected destination.
+CareerOps Share is the Android intake and routing edge for CareerOps. It receives content explicitly shared by the user, normalizes job metadata, applies an optional routing preset, creates a versioned CareerOps request, renders it for the selected destination, and dispatches it through a transport abstraction.
 
-The application intentionally separates:
+The application separates:
 
 1. **What CareerOps should do** — `CareerOpsAction`
-2. **What request is being sent** — `CareerOpsRequest`
-3. **Where the request goes** — `DestinationProfile`
-4. **How it gets there** — `CareerOpsTransport`
-5. **Which model ultimately executes work** — future CareerOps control-plane responsibility
+2. **What routing configuration should be applied** — `CareerOpsPreset`
+3. **What request is being sent** — `CareerOpsRequest`
+4. **How that request is represented** — `RequestProfile` / `CareerOpsRequestRenderer`
+5. **Where the request goes** — `DestinationProfile`
+6. **How it gets there** — `CareerOpsTransport`
+7. **Which model should ultimately execute work** — `ModelPreference`, enforceable later by the CareerOps control plane
 
-This prevents the Android application from being coupled to one AI vendor, one Android app, or one model.
+This prevents the Android application from being coupled to one AI vendor, one Android app, one request representation, or one worker model.
 
-## v0.2 architecture
+## v0.3 architecture
 
 ```mermaid
 flowchart TD
-    A[Android Sharesheet] --> B[MainActivity]
-    B --> C[ShareParser]
-    C --> D[JobShareIntake]
-    D --> E[CareerOpsRequest]
-    U[User selects CareerOps action] --> E
+    A[Android Sharesheet] --> B{Target type}
 
-    E --> F[CareerOpsRequestRenderer]
-    F --> G[Structured text]
-    F --> H[JSON schema v1.0]
+    B -->|CareerOps Share| C[MainActivity]
+    B -->|CareerOps preset shortcut| D[Sharing Shortcut ID]
 
-    V[User selects destination] --> I[DestinationProfile]
-    I --> J[TransportRegistry]
+    C --> E{Normal-share auto-forward?}
+    E -->|No| F[Interactive editor]
+    E -->|Yes| G[Default preset]
+    D --> H[Selected preset]
 
-    G --> J
-    J --> K[AndroidAppTransport]
-    J --> L[AndroidChooserTransport]
-    J -. future .-> M[HTTP/Webhook Transport]
+    G --> I[IncomingShareReader]
+    H --> I
+    F --> I
 
-    K --> N[ChatGPT Android]
-    L --> O[Any Android ACTION_SEND client]
-    M -. future .-> P[CareerOps Gateway]
-    P -. future .-> Q[Agent Control Plane]
-    Q -. future .-> R[Model Broker]
-    R -. future .-> S[GPT / Claude / Gemini / Local / Other]
+    I --> J[ShareParser]
+    J --> K[JobShareIntake]
+    K --> L[CareerOpsRoutePlanner]
+
+    L --> M[CareerOpsRequest]
+    L --> N[DestinationProfile]
+    L --> O[RequestProfile]
+    L --> P[ModelPreference metadata]
+
+    M --> Q[CareerOpsRequestRenderer]
+    O --> Q
+    Q --> R[Rendered payload]
+
+    N --> S[TransportRegistry]
+    R --> S
+    S --> T[AndroidAppTransport]
+    S --> U[AndroidChooserTransport]
+    S -. future .-> V[HTTP transport]
+
+    T --> W[ChatGPT Android]
+    U --> X[Any ACTION_SEND client]
+    V -. future .-> Y[CareerOps Gateway]
+    Y -. future .-> Z[Agent Control Plane / Model Broker]
+
+    S -. failure .-> F
 ```
 
-## Separation of concerns
+## Presets
 
-### Intake
+`CareerOpsPreset` is the central v0.3 routing object.
 
-`ShareParser` is Android-independent. It accepts shared subject/text, caps extremely large input, extracts the first HTTP(S) URL, identifies known job sources, extracts source job IDs where supported, produces canonical URLs, removes known tracking/share parameters where safe, and preserves the original shared content as evidence.
+```text
+CareerOpsPreset
+├── id
+├── name
+├── CareerOpsAction
+├── destinationId
+├── ModelPreference
+├── RequestProfile
+├── autoForward
+└── showInDirectShare
+```
 
-### Request contract
+v0.3 initially provides three stable preset identities:
 
-`CareerOpsRequest` is transport-neutral and currently uses schema version `1.0`.
+- `quick-analyze`
+- `build-store`
+- `full-application`
 
-The request does **not** contain the selected Android destination. A CareerOps request describes the work; the destination describes delivery.
+The identities are intentionally stable because Android Sharing Shortcuts use the preset ID as the shortcut ID.
 
-This separation is important because a future CareerOps gateway may route the same request through different models without changing the Android payload.
+### Storage
 
-### Rendering
+The first implementation stores preset overrides in the existing private `SharedPreferences` file. A v0.2 compatibility migration seeds the Quick Analyze preset from the previous saved action/destination.
 
-`CareerOpsRequestRenderer` has two representations:
+The repository isolates persistence behind `AppPreferences`, allowing a later move to DataStore when arbitrary user-created presets, renaming, ordering or richer schemas justify structured storage.
 
-- **Text** — compatibility format for LLM chat applications. It retains `Analyze this job using CareerOps:`.
-- **JSON** — structured schema intended for future gateways, webhooks, automation, testing, and inter-process handoff.
+## Direct Share
 
-### Destinations
+Android 10+ Direct Share is implemented through the Sharing Shortcuts API.
 
-A `DestinationProfile` contains a stable destination ID, human-readable name, transport type, Android package name when applicable, endpoint URL when applicable, and enabled state.
+`res/xml/shortcuts.xml` declares a `share-target` for `text/*` and a CareerOps preset category. `DirectShareShortcutPublisher` publishes enabled dynamic shortcuts with matching categories.
 
-v0.2 ships two enabled local destinations:
+When a Direct Share target is selected, Android sends the original `ACTION_SEND` to `MainActivity` with:
+
+```text
+android.intent.extra.shortcut.ID = <preset-id>
+```
+
+`MainActivity` resolves the preset and invokes the router **before constructing the editor UI**. A successful route finishes the CareerOps activity after launching the destination. A failed route falls through to the interactive editor with the original shared content preserved.
+
+This is a routing/trampoline behavior even though Android still invokes an Activity as the share target.
+
+## Normal-share auto-forward
+
+The ordinary CareerOps Share app target remains the safe review path by default.
+
+The user can explicitly enable normal-share auto-forward. In that mode:
+
+```text
+ACTION_SEND
+→ load default preset
+→ IncomingShareReader
+→ ShareParser
+→ CareerOpsRoutePlanner
+→ renderer
+→ transport
+```
+
+If routing fails, the app opens the editor rather than discarding the incoming share.
+
+## Intake
+
+`IncomingShareReader` owns Android Intent extraction. `ShareParser` remains Android-independent and owns source/job detection and canonicalization.
+
+This boundary keeps Android framework logic out of parsing tests and allows future non-Android intake sources to reuse parser/request logic.
+
+## Route planning
+
+`CareerOpsRoutePlanner` is Android-independent. Given a `JobShareIntake` and `CareerOpsPreset`, it produces a `CareerOpsRoutePlan` containing:
+
+- the resolved preset,
+- `CareerOpsRequest`,
+- `DestinationProfile`,
+- rendered payload.
+
+This makes routing decisions testable without launching Android activities.
+
+## Request contract
+
+`CareerOpsRequest` remains transport-neutral at schema version `1.0`.
+
+Preset destination and model preference are routing concerns and are not injected into schema v1.0 simply to satisfy the mobile UI. This avoids unnecessary coupling between mobile-release cadence and the CareerOps execution contract.
+
+## Request profiles
+
+v0.3 introduces `RequestProfile` as a renderer-selection boundary.
+
+Initial profiles:
+
+- `careerops_standard` → existing compatibility text beginning with `Analyze this job using CareerOps:`
+- `careerops_json` → structured JSON representation
+
+A future HTTP transport can select structured request profiles without changing the intake or preset model.
+
+## Destinations and model routing
+
+`DestinationProfile` still describes where/how the request leaves Android.
+
+Enabled local destinations:
 
 - ChatGPT Android
 - Android system chooser
 
-A disabled `CAREEROPS_GATEWAY_FUTURE` profile documents the future HTTP boundary without enabling network behavior.
+The future CareerOps Gateway remains defined but disabled.
 
-### Transports
+`ModelPreference` is stored independently from destination. For normal Android chat-app targets, the capability is `DESTINATION_DEFAULT`: CareerOps Share cannot guarantee which internal model the destination application uses.
 
-`CareerOpsTransport` is the delivery interface.
+The future Gateway can advertise `ENFORCED` model-routing capability and honor the same preset preference server-side.
 
-v0.2 implements:
+## Transports
+
+`CareerOpsTransport` remains the delivery interface.
+
+v0.3 implements:
 
 - `AndroidAppTransport`
 - `AndroidChooserTransport`
 
-`TransportType.HTTP_POST` is defined for forward compatibility, but `TransportRegistry` deliberately returns no implementation for it in v0.2.
+`TransportType.HTTP_POST` remains a forward-compatible contract only. No network transport is registered in v0.3.
 
 ## Security boundary
 
-v0.2 remains local-only:
+v0.3 remains local-only:
 
 - no `INTERNET` permission,
 - no API keys,
@@ -98,9 +196,15 @@ v0.2 remains local-only:
 - no background network activity,
 - no direct repository mutation.
 
-The user explicitly initiates every share and every send.
+Direct Share changes interaction speed, not the application's trust boundary.
 
-## Future transport design
+## Stable signing boundary
+
+Stable release signing is independent from feature routing.
+
+v0.2.1 established the permanent release certificate. v0.3 development uses normal debug CI; signed RC/final releases must continue through the guarded permanent-key workflows and must match the established signer fingerprint.
+
+## Future Gateway design
 
 ```mermaid
 sequenceDiagram
@@ -110,10 +214,10 @@ sequenceDiagram
     participant M as Model Broker
     participant W as Worker Model
 
-    A->>G: POST CareerOpsRequest JSON
+    A->>G: POST CareerOpsRequest + routing metadata
     G-->>A: request_id + accepted
     G->>C: validated request
-    C->>M: execution requirements
+    C->>M: action + model preference + constraints
     M->>W: routed task
     W-->>M: structured result
     M-->>C: result
@@ -121,13 +225,10 @@ sequenceDiagram
     G-->>A: optional status/result
 ```
 
-The Android client should generally select the **destination**, not the underlying worker model. Model selection belongs in the control plane so new providers/models can be added without requiring a mobile app release.
-
 ## Versioning
 
-Two versions matter:
+Three version concepts are deliberately independent:
 
-- Android application version — e.g. `0.2.0`
-- CareerOps request schema version — currently `1.0`
-
-They are intentionally independent.
+- Android application version — v0.3 development is `0.3.0`
+- CareerOps request schema — currently `1.0`
+- preset storage/schema — internal Android persistence contract, currently not externally versioned
