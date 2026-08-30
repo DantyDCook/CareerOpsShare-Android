@@ -1,13 +1,22 @@
 # Validation Status
 
-## v0.3.0 — Direct Share / Preset Routing candidate
+## v0.3.0 — Direct Share / Quick Share / UI candidate
 
-Branch: `feature/v0.3.0-direct-share-presets`
+Primary release branch: `feature/v0.3.0-direct-share-presets`  
+Validated stacked UI/semantics branch: `feature/v0.3.0-ui-shell-insets`
 
 Expected Android version:
 
 - `versionName = 0.3.0`
 - `versionCode = 5`
+
+CareerOps intake request contract:
+
+- `schema_version = 1.0`
+- Android application version and CareerOps request-schema version are independent.
+- `docs/REQUEST_SCHEMA.md` defines the current v1.0 request contract.
+- CareerOps-Engine currently has no competing intake-request schema under its `schemas/` tree.
+- CareerOps-Engine issue #20 tracks centralizing intake-schema/version governance before future contract changes.
 
 Expected permanent signer certificate SHA-256:
 
@@ -18,78 +27,94 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 ### Automated validation
 
 - PASS — first v0.3 implementation Android CI run #22 completed successfully.
+- PASS — Android CI #27 completed successfully on routing implementation commit `61e8b08062eb0b42693da690f024ff7bb711d8f7` before initial signed-RC device testing.
+- PASS — stacked UI shell first compiled/tested successfully in Android CI #39.
+- PASS — theme implementation compiled/tested successfully in Android CI #41.
+- PASS — Android CI #52 completed successfully on exact two-slot/default-separation implementation head `5fb95fd81ccb604d089cee2e9c6a954dd9ab26bf`.
 - PASS — Gradle unit tests cover preset-driven route planning and JSON/text request-profile selection.
+- PASS — unit coverage added for `DirectShareSlots` normalization and independent `RegularShareDefaults` session conversion.
 - PASS — debug APK compiled with Android SDK 36 / JDK 17 in CI.
-- PASS — Android CI #27 completed successfully on commit `61e8b08062eb0b42693da690f024ff7bb711d8f7` before signed-RC device testing.
-- PENDING — signed `Android Release Candidate` build metadata/fingerprint independently verified in the repository record.
-- PENDING — signed RC `apksigner` fingerprint match against the established permanent signer independently recorded for v0.3.0.
-- PENDING — final/current-head CI after device-validation documentation/UI follow-up commits.
+- PENDING — final/current-head CI after this validation-documentation commit.
+- PENDING — final combined v0.3 branch CI after stacked UI merge.
+- PENDING — signed final-candidate workflow metadata/fingerprint independently recorded for the release gate.
 
 ### Physical-device upgrade validation
 
-- PASS — signed v0.3.0 RC installed over the stable-signed v0.2.1 app using the Android package installer update path.
+- PASS — signed v0.3.0 RC installed over the stable-signed v0.2.1 app using the Android package-installer update path.
 - PASS — no uninstall/signature migration was required between v0.2.1 and v0.3.0.
-- PASS — app launched normally after the in-place upgrade; v0.3 preset-routing UI displayed successfully.
+- PASS — later signed v0.3 UI/semantics RCs also upgraded in place over the already-installed v0.3 candidate.
+- PASS — app launched normally after each in-place update.
 
-### Interactive share regression
+### Regular Share / Review
 
-- PASS — ordinary **CareerOps Share** path was exercised successfully on the physical device.
-- PASS — regular/non-Direct-Share routing still works after the v0.3.0 upgrade.
+- PASS — ordinary **CareerOps Share** path works on the physical device.
+- PASS — regular/non-Direct-Share routing still works after the v0.3 upgrades.
+- PASS — regular Share now initializes from independent regular-share defaults rather than from a Quick Share profile.
+- PASS — persistent regular-share defaults can be changed/saved from Settings.
+- PASS — changing the review action from **Analyze** to **Build & Store** immediately regenerates the prepared request with `ANALYZE_BUILD_STORE`.
+- PASS — review-time route selection remains usable after the default/profile separation.
 - PENDING — explicitly re-verify that **Skip editor for normal shares** disabled always opens the interactive editor.
-- PENDING — LinkedIn source/job ID/canonical URL are still correct.
-- PENDING — Indeed source/`jk`/canonical URL are still correct.
-- PENDING — prepared CareerOps Standard request renders correctly.
-- PENDING — CareerOps JSON request profile renders correctly.
-- PENDING — manual Send to ChatGPT works as an explicitly isolated test.
-- PENDING — Android system chooser works as an explicitly isolated test.
+- PENDING — explicit LinkedIn source/job-ID/canonical-URL regression check on the final combined candidate.
+- PENDING — explicit Indeed source/`jk`/canonical-URL regression check on the final combined candidate.
+- PENDING — explicit CareerOps JSON request-profile smoke test on the final combined candidate.
+- PENDING — explicit Android chooser smoke test on the final combined candidate.
 
-### Preset behavior and persistence
+### Quick Share profile behavior
 
-- PASS — preset selection/configuration could be changed on the physical device and sharing continued to work afterward.
-- PASS — changing presets did not break the regular share or tested fast-action path.
-- PENDING — Quick Analyze preset specifically persists `ANALYZE` across app restart.
-- PENDING — Build & Store preset specifically persists `ANALYZE_BUILD_STORE` across app restart.
-- PENDING — Full Application preset specifically persists `ANALYZE_BUILD_STORE_COVER_LETTER` across app restart.
-- PENDING — action changes persist after **Save preset** and app restart.
-- PENDING — destination changes persist after **Save preset** and app restart.
-- PENDING — request-profile changes persist after **Save preset** and app restart.
-- PENDING — model-preference changes persist after **Save preset** without claiming to switch the target app's internal model.
-- PENDING — selected default preset persists across app restart.
-- PENDING — Direct Share visibility setting persists across app restart.
+- PASS — Quick Analyze Direct Share works on the physical device.
+- PASS — a second saved Quick Share can be activated and works.
+- PASS — Quick Share configurations remain independent from regular app defaults.
+- PASS — Direct Share Slot 1 is visible and editable.
+- PASS — Direct Share Slot 2 is visible and editable.
+- PASS — both slots can be populated from the saved built-in profile library.
+- PASS — **Clear Direct Share** removes the active CareerOps Direct Share shortcuts.
+- PASS — clearing Direct Share does not prevent the saved Quick Share profile from being selected again.
+- PASS — restoring a saved Quick Share after clearing republishes it and the quick-share route works again.
+- PASS — Android shortcut rank is deterministic in code: Slot 1 then Slot 2.
+- PENDING — explicit physical test that selecting the same profile into the opposite slot does not publish a duplicate.
+- PENDING — explicit final-candidate routing check for Full Application when selected into a slot.
 
-### Normal-share fast path
+### Quick Share architecture decisions
 
-- PENDING — enable **Skip editor for normal shares (use default preset)**.
-- PENDING — share a job through the ordinary CareerOps Share app target.
-- PENDING — editor is skipped and the saved default preset routes immediately.
-- PENDING — routed request contains the default preset's expected CareerOps action.
-- PENDING — disabling the setting restores the interactive editor path.
+The first v0.3 RC used per-profile `showInDirectShare` pin state. Physical testing showed that model hid the first active shortcut state and encouraged shortcut clutter.
 
-### Android Direct Share / Sharing Shortcuts
+The current v0.3 model separates **saved Quick Share profiles** from **active Android Direct Share slots**:
 
-- PASS — Android Direct Share / fast-action sharing was exercised successfully with the Quick Analyze path.
-- PASS — a Direct Share preset routed successfully without breaking the regular share path.
-- OBSERVED — multiple presets enabled for Direct Share remain available as separate CareerOps Direct Share shortcuts; this is consistent with the current publication model but produces a cluttered UX.
-- TRACKED — issue #10, **UX: Curate Direct Share presets and prevent shortcut clutter**.
-- PENDING — Build & Store Direct Share explicitly verified to route `ANALYZE_BUILD_STORE`.
-- PENDING — Full Application Direct Share explicitly verified to route `ANALYZE_BUILD_STORE_COVER_LETTER`.
-- PENDING — disabling **Show selected preset in Android Direct Share** removes that dynamic shortcut after republish/system refresh.
-- PENDING — Direct Share ordering/ranking and stale-shortcut cleanup behavior explicitly verified.
+```text
+Saved Quick Share profiles
+├── Quick Analyze
+├── Build & Store
+└── Full Application
+
+Active Android Direct Share
+├── Slot 1: None / saved profile
+├── Slot 2: None / saved profile
+└── Clear Direct Share
+```
+
+- PASS — either slot can be reset to `None` in the implementation.
+- PASS — `Clear Direct Share` resets both active slots without deleting the saved profile configurations.
+- PASS — first-RC active shortcut state has a migration path into the explicit slot model.
+- DEFERRED — arbitrary user-created Quick Share profiles, generated IDs, automatic/custom naming, create/rename/delete/order, and DataStore-style persistence are tracked in issue #14.
+
+### Theme / app-shell validation
+
+- PASS — Light appearance works on the physical device.
+- PASS — Dark appearance works on the physical device.
+- PASS — Follow Android System appearance works on the physical device.
+- PASS — changing appearance does not crash or accidentally submit the original shared job.
+- PASS — Share / Quick Shares / Settings separation is materially less crowded than the first v0.3 RC.
+- PASS — the original status-bar/content-overlap problem is substantially improved by shell-level inset handling.
+- ACCEPTED WITH FOLLOW-UP — initial immersive mode is usable for v0.3, but currently behaves primarily as hide/reveal system bars rather than a full edge-to-edge layout transformation.
+- DEFERRED — true edge-to-edge immersive expansion remains issue #6.
+- DEFERRED — broad Material styling, modern controls, and animated slide-out navigation drawer remain issue #13.
+- DEFERRED — optional scheduled theme switching remains issue #5.
 
 ### Failure fallback
 
 - PENDING — configure/use a route whose explicit destination cannot be completed.
 - PENDING — immediate routing failure preserves the original incoming share and opens the interactive editor rather than losing the request.
 - PENDING — user can select another destination and send successfully.
-
-### UI / information-architecture findings
-
-- FAIL/OPEN — v0.3.0 RC demonstrates status-bar/content overlap while scrolling: visible Android status-bar icons/text can sit over app title, labels, and controls.
-- TRACKED — issue #8, **Bug: Status bar overlays scrolling content in v0.3.0**.
-- RELATED — issue #6, **Feature: Edge-to-edge UI and configurable system-bar behavior**.
-- FAIL/UX — current single long scrolling screen is too busy/crowded as routing, preset editing, future UI settings, and share-review controls all occupy the same surface.
-- TRACKED — issue #9, **UX: Redesign app shell into focused Share, Presets, and Settings areas**.
-- PLAN — use a dedicated UI/system-insets/app-shell branch so routing remains isolated while the Share surface is simplified and Presets/Settings become separate areas.
 
 ### Security assertions
 
@@ -101,21 +126,24 @@ v0.3 must retain:
 - no background network submission,
 - no signing key material in source control.
 
-### UI backlog decision
+### Open follow-up issues
 
-The following UI work is now explicitly tracked around the v0.3 routing core:
-
-- issue #5 — theme controls / optional scheduled theme,
-- issue #6 — edge-to-edge and status/navigation-bar behavior,
-- issue #8 — concrete v0.3.0 scrolling/status-bar overlap regression,
-- issue #9 — app-shell / Share-Presets-Settings information architecture,
-- issue #10 — Direct Share preset curation and shortcut clutter.
+- issue #5 — optional scheduled theme behavior,
+- issue #6 — true edge-to-edge/system-bar behavior,
+- issue #8 — original scrolling/status-bar regression (covered by the shell/insets work; retain through final regression),
+- issue #9 — app-shell information architecture (physically accepted; retain through final release validation),
+- issue #10 — two-slot Direct Share curation (physically validated for slot use, clear, and restore; retain through final release validation),
+- issue #13 — Material visual modernization and animated navigation drawer,
+- issue #14 — user-created Quick Share profile library,
+- CareerOps-Engine issue #20 — canonical intake request schema/version governance.
 
 ### Release gate
 
-Release gate: PENDING
+Release gate: PENDING — final release-level regression and signing record only.
 
-Do not merge/release v0.3.0 until signed-RC metadata/fingerprint verification, remaining routing/failure-fallback checks, final/current-head CI, and this validation record are complete. The v0.3.0 in-place permanent-signing upgrade, ordinary share path, Quick Analyze Direct Share path, and basic preset-change regression are confirmed PASS. Resolve or explicitly defer the open UI findings before release approval.
+The v0.3 routing core, in-place signing upgrade, ordinary share path, independent regular-share defaults, live prompt regeneration, two explicit Direct Share slots, Clear Direct Share, restore behavior, theme modes, and revised information architecture have been physically validated.
+
+The stacked UI/semantics branch may merge back into `feature/v0.3.0-direct-share-presets` after its validation-documentation head passes CI. Before final `main` merge/release, complete the combined-branch CI, explicit parser/JSON/chooser/failure-fallback regression checks as appropriate, and record the signed final-candidate workflow/signing metadata.
 
 ---
 
