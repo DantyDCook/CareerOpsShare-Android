@@ -30,10 +30,13 @@ object DirectShareShortcutPublisher {
             return ShortcutPublishResult(0)
         }
 
-        val allowedCount = minOf(maxCount, PresetCatalog.MAX_DIRECT_SHARE_PRESETS)
-        val presets = AppPreferences.loadPresets(context)
-            .filter { it.showInDirectShare }
-            .take(allowedCount)
+        val slotIds = AppPreferences.loadDirectShareSlots(context)
+            .activeProfileIds()
+            .take(minOf(maxCount, PresetCatalog.MAX_DIRECT_SHARE_PRESETS))
+
+        val presets = slotIds.mapNotNull { id ->
+            PresetCatalog.fromIdOrNull(id)?.let { AppPreferences.loadPreset(context, it.id) }
+        }
 
         val expectedShortcutState = presets.mapIndexed { rank, preset ->
             ShortcutState(preset.id, preset.name, rank)
