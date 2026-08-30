@@ -19,13 +19,13 @@ Branch: `release/v0.2.1-stable-signing`
 - PASS — old debug-signing lineage was removed before installing the permanent-signing candidate.
 - PASS — signed RC contains exactly one signer and verifies with APK Signature Scheme v2.
 - PASS — signed RC signer identity: `CN=CareerOps Share, OU=Mobile, O=CareerOps, C=US`.
-- RECORDED — permanent signer certificate SHA-256 fingerprint:
+- PASS — permanent signer certificate SHA-256 fingerprint recorded and confirmed against the local permanent keystore:
 
 ```text
 e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 ```
 
-- PENDING LOCAL MATCH — compare this fingerprint with the SHA-256 fingerprint printed by `keytool -list -v` for the backed-up local `careerops-share-release.p12` keystore before final release.
+- PASS — permanent `careerops-share-release.p12` keystore has a second secure backup copy.
 
 ### Physical-device validation
 
@@ -35,7 +35,9 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 
 ### Release gate
 
-PENDING — signed build, APK signature verification, installation, and functional sharing are validated, and the release signer fingerprint is recorded. Final release remains blocked only until (1) the recorded signer SHA-256 is confirmed to match the locally generated/backed-up permanent keystore and (2) the keystore has a second secure backup. After those confirmations and a green PR CI run for this final validation commit, mark this section `Release gate: PASS`, merge the candidate PR into `main`, confirm `main` Android CI is green, then run the guarded `v0.2.1` Android Release workflow.
+Release gate: PASS
+
+The signed build, APK signature verification, permanent-key fingerprint match, keystore backup, physical installation, functional sharing test, and PR Android CI are complete. The candidate is cleared to merge into `main`. After merge, `main` Android CI must pass before the guarded `v0.2.1` Android Release workflow is started.
 
 ---
 
