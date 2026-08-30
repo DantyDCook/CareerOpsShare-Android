@@ -99,6 +99,9 @@ class MainActivity : Activity() {
 
         return when (val result = ShareRouter.route(this, incoming, preset)) {
             is ShareRouteResult.Sent -> {
+                if (!shortcutId.isNullOrBlank()) {
+                    DirectShareShortcutPublisher.reportUsed(this, preset.id)
+                }
                 finish()
                 true
             }
