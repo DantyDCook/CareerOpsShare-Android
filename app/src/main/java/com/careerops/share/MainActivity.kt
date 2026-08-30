@@ -50,15 +50,36 @@ class MainActivity : Activity() {
     private val modelPreferences = ModelPreference.entries.toList()
     private val requestProfiles = RequestProfile.entries.toList()
     private val systemBarModes = SystemBarMode.entries.toList()
+    private val themeModes = AppThemeMode.entries.toList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val requestedTheme = AppPreferences.loadThemeMode(this)
+        val darkTheme = AppAppearance.resolveDark(this, requestedTheme)
+        setTheme(
+            if (darkTheme) android.R.style.Theme_Material_NoActionBar
+            else android.R.style.Theme_Material_Light_NoActionBar
+        )
         super.onCreate(savedInstanceState)
 
         AppPreferences.ensureV03Migration(this)
+        applyPalette()
         DirectShareShortcutPublisher.publish(this)
 
-        if (tryImmediateRoute(intent)) return
-        buildInteractiveShell(intent)
+        // Recreate/configuration changes must rebuild the editor, not re-submit the
+        // original ACTION_SEND through the auto-forward path a second time.
+        if (savedInstanceState == null && tryImmediateRoute(intent)) return
+
+        val restoredSection = savedInstanceState
+            ?.getString(STATE_SECTION)
+            ?.let { name -> runCatching { AppSection.valueOf(name) }.getOrNull() }
+            ?: AppSection.SHARE
+
+        buildInteractiveShell(intent, restoredSection)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(STATE_SECTION, activeSection.name)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -68,7 +89,7 @@ class MainActivity : Activity() {
         if (tryImmediateRoute(intent)) return
 
         if (!uiBuilt) {
-            buildInteractiveShell(intent)
+            buildInteractiveShell(intent, AppSection.SHARE)
         } else {
             consumeIncomingIntent(intent)
             showSection(AppSection.SHARE)
@@ -113,7 +134,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildInteractiveShell(incoming: Intent?) {
+    private fun buildInteractiveShell(incoming: Intent?, initialSection: AppSection) {
         shellRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(COLOR_APP_BACKGROUND)
@@ -123,7 +144,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), dp(4), dp(14), dp(4))
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(COLOR_SURFACE)
             elevation = dp(3).toFloat()
         }
 
@@ -142,7 +163,7 @@ class MainActivity : Activity() {
         )
 
         screenTitleView = TextView(this).apply {
-            text = AppSection.SHARE.title
+            text = initialSection.title
             textSize = 20f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(COLOR_PRIMARY_TEXT)
@@ -182,12 +203,12 @@ class MainActivity : Activity() {
             activity = this,
             root = shellRoot,
             mode = AppPreferences.loadSystemBarMode(this),
-            darkBackground = false
+            darkBackground = IS_DARK_THEME
         )
 
         uiBuilt = true
         consumeIncomingIntent(incoming)
-        showSection(AppSection.SHARE)
+        showSection(initialSection)
         showPendingRoutingError()
     }
 
@@ -286,7 +307,7 @@ class MainActivity : Activity() {
                 root.addView(TextView(this).apply {
                     text = "Very large shared text was capped at 100,000 characters."
                     textSize = 12f
-                    setTextColor(Color.rgb(150, 80, 20))
+                    setTextColor(Color.rgb(210, 132, 53))
                     setPadding(0, dp(6), 0, 0)
                 })
             }
@@ -300,7 +321,7 @@ class MainActivity : Activity() {
             setTextColor(COLOR_PRIMARY_TEXT)
             setHintTextColor(COLOR_SECONDARY_TEXT)
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = roundedBox(Color.WHITE, COLOR_BORDER)
+            background = roundedBox(COLOR_SURFACE, COLOR_BORDER)
             setText(renderCurrentPayload())
         }
         root.addView(
@@ -470,6 +491,30 @@ class MainActivity : Activity() {
             )
         )
 
+        root.addView(sectionLabel("Appearance"))
+        val themeSpinner = spinner(themeModes.map { it.displayName })
+        val currentTheme = AppPreferences.loadThemeMode(this)
+        themeSpinner.setSelection(themeModes.indexOf(currentTheme).coerceAtLeast(0), false)
+        themeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                val selected = themeModes.getOrElse(position) { AppThemeMode.FOLLOW_SYSTEM }
+                if (selected == AppPreferences.loadThemeMode(this@MainActivity)) return
+
+                AppPreferences.saveThemeMode(this@MainActivity, selected)
+                toast("Appearance: ${selected.displayName}")
+                recreate()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+        root.addView(themeSpinner)
+        root.addView(helperText("Follow system, Light, and Dark are available now. Optional scheduled switching remains a later #5 enhancement."))
+
         root.addView(sectionLabel("System bars"))
         val systemBarSpinner = spinner(systemBarModes.map { it.displayName })
         val currentSystemBarMode = AppPreferences.loadSystemBarMode(this)
@@ -489,7 +534,7 @@ class MainActivity : Activity() {
                     activity = this@MainActivity,
                     root = shellRoot,
                     mode = selected,
-                    darkBackground = false
+                    darkBackground = IS_DARK_THEME
                 )
             }
 
@@ -497,13 +542,6 @@ class MainActivity : Activity() {
         }
         root.addView(systemBarSpinner)
         root.addView(helperText("Standard mode keeps content clear of the status/navigation bars. Immersive mode hides them and allows swipe-to-reveal."))
-
-        root.addView(sectionLabel("Appearance"))
-        root.addView(
-            infoCard(
-                "Theme controls are assigned to this Settings area. Follow-system / Light / Dark is the next visual slice; scheduled theme remains tracked under issue #5."
-            )
-        )
 
         root.addView(sectionLabel("Destinations & accounts"))
         root.addView(
@@ -674,6 +712,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun applyPalette() {
+        val palette = AppAppearance.palette(this)
+        IS_DARK_THEME = palette.isDark
+        COLOR_APP_BACKGROUND = palette.background
+        COLOR_SURFACE = palette.surface
+        COLOR_PRIMARY_TEXT = palette.primaryText
+        COLOR_SECONDARY_TEXT = palette.secondaryText
+        COLOR_BORDER = palette.border
+    }
+
     private fun contentColumn(): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -711,7 +759,7 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(COLOR_PRIMARY_TEXT)
             setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = roundedBox(Color.WHITE, COLOR_BORDER)
+            background = roundedBox(COLOR_SURFACE, COLOR_BORDER)
         }
 
     private fun spinner(items: List<String>): Spinner =
@@ -764,14 +812,17 @@ class MainActivity : Activity() {
 
     companion object {
         private const val DEFAULT_PROMPT = "Analyze this job using CareerOps:"
+        private const val STATE_SECTION = "careerops.active_section"
 
         private const val MENU_SHARE = 100
         private const val MENU_PRESETS = 101
         private const val MENU_SETTINGS = 102
 
-        private val COLOR_APP_BACKGROUND = Color.rgb(247, 248, 250)
-        private val COLOR_PRIMARY_TEXT = Color.rgb(28, 34, 43)
-        private val COLOR_SECONDARY_TEXT = Color.rgb(96, 105, 118)
-        private val COLOR_BORDER = Color.rgb(216, 222, 230)
+        private var IS_DARK_THEME = false
+        private var COLOR_APP_BACKGROUND = Color.rgb(247, 248, 250)
+        private var COLOR_SURFACE = Color.WHITE
+        private var COLOR_PRIMARY_TEXT = Color.rgb(28, 34, 43)
+        private var COLOR_SECONDARY_TEXT = Color.rgb(96, 105, 118)
+        private var COLOR_BORDER = Color.rgb(216, 222, 230)
     }
 }
