@@ -12,11 +12,15 @@ object AppPreferences {
 
     private const val KEY_V03_MIGRATED = "v03_preset_migration_complete"
     private const val KEY_DIRECT_SHARE_CURATION_MIGRATED = "v03_direct_share_curation_complete"
+    private const val KEY_DIRECT_SHARE_SLOTS_MIGRATED = "v03_direct_share_slots_migration_complete"
     private const val KEY_REGULAR_DEFAULTS_MIGRATED = "v03_regular_defaults_migration_complete"
     private const val KEY_DEFAULT_PRESET = "default_preset_id"
     private const val KEY_DIRECT_SHARE_ENABLED = "direct_share_enabled"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_SYSTEM_BAR_MODE = "system_bar_mode"
+
+    private const val KEY_DIRECT_SHARE_SLOT_1 = "direct_share.slot_1"
+    private const val KEY_DIRECT_SHARE_SLOT_2 = "direct_share.slot_2"
 
     private const val KEY_REGULAR_ACTION = "regular_share.action"
     private const val KEY_REGULAR_DESTINATION = "regular_share.destination"
@@ -51,6 +55,7 @@ object AppPreferences {
         }
 
         ensureDirectShareCurationMigration(context)
+        ensureDirectShareSlotsMigration(context)
         ensureRegularShareDefaultsMigration(context)
     }
 
@@ -73,6 +78,30 @@ object AppPreferences {
 
         prefs.edit()
             .putBoolean(KEY_DIRECT_SHARE_CURATION_MIGRATED, true)
+            .apply()
+    }
+
+    private fun ensureDirectShareSlotsMigration(context: Context) {
+        val prefs = preferences(context)
+        if (prefs.getBoolean(KEY_DIRECT_SHARE_SLOTS_MIGRATED, false)) return
+
+        // Preserve the current active Quick Share set once, then make activation
+        // an explicit two-slot configuration independent from profile storage.
+        val previouslyPinned = loadPresets(context)
+            .filter { it.showInDirectShare }
+            .map { it.id }
+            .take(PresetCatalog.MAX_DIRECT_SHARE_PRESETS)
+
+        saveDirectShareSlots(
+            context,
+            DirectShareSlots(
+                firstProfileId = previouslyPinned.getOrNull(0),
+                secondProfileId = previouslyPinned.getOrNull(1)
+            )
+        )
+
+        prefs.edit()
+            .putBoolean(KEY_DIRECT_SHARE_SLOTS_MIGRATED, true)
             .apply()
     }
 
@@ -121,6 +150,8 @@ object AppPreferences {
                 prefs.getString("${prefix}request_profile", base.requestProfile.id)
             ),
             autoForward = prefs.getBoolean("${prefix}auto_forward", base.autoForward),
+            // Legacy compatibility field only. Active Android Direct Share state
+            // is now owned by DirectShareSlots rather than by each saved profile.
             showInDirectShare = prefs.getBoolean(
                 "${prefix}show_in_direct_share",
                 base.showInDirectShare
@@ -140,12 +171,41 @@ object AppPreferences {
             .apply()
     }
 
-    fun clearDirectShareSelections(context: Context) {
-        loadPresets(context).forEach { preset ->
-            if (preset.showInDirectShare) {
-                savePreset(context, preset.copy(showInDirectShare = false))
-            }
+    fun loadDirectShareSlots(context: Context): DirectShareSlots {
+        val prefs = preferences(context)
+        return DirectShareSlots(
+            firstProfileId = prefs.getString(KEY_DIRECT_SHARE_SLOT_1, null),
+            secondProfileId = prefs.getString(KEY_DIRECT_SHARE_SLOT_2, null)
+        ).normalized()
+    }
+
+    fun saveDirectShareSlots(context: Context, slots: DirectShareSlots) {
+        val normalized = slots.normalized()
+        preferences(context).edit()
+            .putString(KEY_DIRECT_SHARE_SLOT_1, normalized.firstProfileId)
+            .putString(KEY_DIRECT_SHARE_SLOT_2, normalized.secondProfileId)
+            .apply()
+    }
+
+    fun saveDirectShareSlot(context: Context, slot: Int, profileId: String?) {
+        val validId = PresetCatalog.fromIdOrNull(profileId)?.id
+        val current = loadDirectShareSlots(context)
+        val updated = when (slot) {
+            1 -> DirectShareSlots(
+                firstProfileId = validId,
+                secondProfileId = current.secondProfileId?.takeUnless { it == validId }
+            )
+            2 -> DirectShareSlots(
+                firstProfileId = current.firstProfileId?.takeUnless { it == validId },
+                secondProfileId = validId
+            )
+            else -> current
         }
+        saveDirectShareSlots(context, updated)
+    }
+
+    fun clearDirectShareSelections(context: Context) {
+        saveDirectShareSlots(context, DirectShareSlots())
     }
 
     fun loadRegularShareDefaults(context: Context): RegularShareDefaults {
