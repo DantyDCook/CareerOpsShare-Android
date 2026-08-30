@@ -36,6 +36,27 @@ enum class RequestProfile(val id: String, val displayName: String) {
     }
 }
 
+enum class AppThemeMode(val id: String, val displayName: String) {
+    FOLLOW_SYSTEM("FOLLOW_SYSTEM", "Follow Android system"),
+    LIGHT("LIGHT", "Light"),
+    DARK("DARK", "Dark");
+
+    companion object {
+        fun fromId(id: String?): AppThemeMode =
+            entries.firstOrNull { it.id == id } ?: FOLLOW_SYSTEM
+    }
+}
+
+enum class SystemBarMode(val id: String, val displayName: String) {
+    SAFE_INSETS("SAFE_INSETS", "Standard / keep content clear of system bars"),
+    IMMERSIVE("IMMERSIVE", "Immersive / swipe to reveal system bars");
+
+    companion object {
+        fun fromId(id: String?): SystemBarMode =
+            entries.firstOrNull { it.id == id } ?: SAFE_INSETS
+    }
+}
+
 enum class TransportType {
     ANDROID_APP,
     ANDROID_CHOOSER,
@@ -95,29 +116,34 @@ data class CareerOpsPreset(
     val modelPreference: ModelPreference = ModelPreference.AUTO,
     val requestProfile: RequestProfile = RequestProfile.CAREEROPS_STANDARD,
     val autoForward: Boolean = true,
-    val showInDirectShare: Boolean = true
+    val showInDirectShare: Boolean = false
 )
 
 object PresetCatalog {
+    const val MAX_DIRECT_SHARE_PRESETS = 2
+
     val QUICK_ANALYZE = CareerOpsPreset(
         id = "quick-analyze",
         name = "Quick Analyze",
         action = CareerOpsAction.ANALYZE,
-        destinationId = DestinationCatalog.CHATGPT.id
+        destinationId = DestinationCatalog.CHATGPT.id,
+        showInDirectShare = true
     )
 
     val BUILD_STORE = CareerOpsPreset(
         id = "build-store",
         name = "Build & Store",
         action = CareerOpsAction.ANALYZE_BUILD_STORE,
-        destinationId = DestinationCatalog.CHATGPT.id
+        destinationId = DestinationCatalog.CHATGPT.id,
+        showInDirectShare = false
     )
 
     val FULL_APPLICATION = CareerOpsPreset(
         id = "full-application",
         name = "Full Application",
         action = CareerOpsAction.ANALYZE_BUILD_STORE_COVER_LETTER,
-        destinationId = DestinationCatalog.CHATGPT.id
+        destinationId = DestinationCatalog.CHATGPT.id,
+        showInDirectShare = false
     )
 
     val builtIns: List<CareerOpsPreset> =
