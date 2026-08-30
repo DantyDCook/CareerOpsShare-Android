@@ -15,6 +15,7 @@ import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -29,27 +30,94 @@ class MainActivity : Activity() {
     private lateinit var urlView: TextView
     private lateinit var payloadEditor: EditText
     private lateinit var truncationView: TextView
+    private lateinit var presetSpinner: Spinner
     private lateinit var actionSpinner: Spinner
     private lateinit var destinationSpinner: Spinner
+    private lateinit var modelSpinner: Spinner
+    private lateinit var requestProfileSpinner: Spinner
+    private lateinit var directShareCheckBox: CheckBox
+    private lateinit var showInDirectShareCheckBox: CheckBox
+    private lateinit var defaultPresetView: TextView
 
+    private val presetDefinitions = PresetCatalog.builtIns
     private val actions = CareerOpsAction.entries.toList()
     private val destinations = DestinationCatalog.localDestinations()
+    private val modelPreferences = ModelPreference.entries.toList()
+    private val requestProfiles = RequestProfile.entries.toList()
 
     private var currentIntake: JobShareIntake? = null
+    private var currentPresetId: String = PresetCatalog.QUICK_ANALYZE.id
     private var suppressSelectionCallbacks = true
+    private var uiBuilt = false
+    private var pendingRoutingError: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildUi())
-        restoreSelections()
-        suppressSelectionCallbacks = false
-        consumeIntent(intent)
+
+        AppPreferences.ensureV03Migration(this)
+        DirectShareShortcutPublisher.publish(this)
+
+        if (tryImmediateRoute(intent)) return
+        buildInteractiveUi(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        consumeIntent(intent)
+
+        if (tryImmediateRoute(intent)) return
+
+        if (!uiBuilt) {
+            buildInteractiveUi(intent)
+        } else {
+            applyPresetSelectionForIntent(intent)
+            consumeIntent(intent)
+            showPendingRoutingError()
+        }
+    }
+
+    private fun tryImmediateRoute(incoming: Intent?): Boolean {
+        if (incoming?.action != Intent.ACTION_SEND || incoming.type?.startsWith("text/") != true) {
+            return false
+        }
+
+        val shortcutId = incoming.getStringExtra(DirectShareContract.EXTRA_SHORTCUT_ID)
+        val preset = if (!shortcutId.isNullOrBlank()) {
+            val knownPreset = PresetCatalog.fromIdOrNull(shortcutId)
+            if (knownPreset == null) {
+                pendingRoutingError = "Direct Share preset '$shortcutId' is no longer available"
+                return false
+            }
+            AppPreferences.loadPreset(this, knownPreset.id)
+        } else if (AppPreferences.loadDirectShareEnabled(this)) {
+            AppPreferences.loadDefaultPreset(this)
+        } else {
+            return false
+        }
+
+        if (!preset.autoForward) return false
+
+        return when (val result = ShareRouter.route(this, incoming, preset)) {
+            is ShareRouteResult.Sent -> {
+                finish()
+                true
+            }
+            is ShareRouteResult.Failed -> {
+                pendingRoutingError = "${result.reason}. Opened the editor instead."
+                false
+            }
+            ShareRouteResult.NotShare -> false
+        }
+    }
+
+    private fun buildInteractiveUi(incoming: Intent?) {
+        suppressSelectionCallbacks = true
+        setContentView(buildUi())
+        uiBuilt = true
+        restoreSettings(incoming)
+        suppressSelectionCallbacks = false
+        consumeIntent(incoming)
+        showPendingRoutingError()
     }
 
     private fun buildUi(): ScrollView {
@@ -68,12 +136,127 @@ class MainActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Smart CareerOps intake for Android. Normalize a shared job, choose the CareerOps action and destination, review the request, then send it."
+            text = "Choose CareerOps Share for review/default behavior, or tap a CareerOps preset in Android Direct Share to route immediately."
             textSize = 15f
             setTextColor(Color.DKGRAY)
-            setPadding(0, dp(8), 0, dp(20))
+            setPadding(0, dp(8), 0, dp(12))
         })
 
+        root.addView(sectionLabel("Routing preset"))
+        presetSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                presetDefinitions.map { it.name }
+            )
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: AdapterView<*>?,
+                    view: View?,
+                    position: Int,
+                    id: Long
+                ) {
+                    if (suppressSelectionCallbacks) return
+                    loadPresetIntoControls(presetDefinitions[position].id)
+                    refreshRenderedPayload()
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            }
+        }
+        root.addView(presetSpinner)
+
+        defaultPresetView = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.GRAY)
+            setPadding(0, dp(6), 0, 0)
+        }
+        root.addView(defaultPresetView)
+
+        root.addView(Button(this).apply {
+            text = "Set selected preset as default"
+            setOnClickListener {
+                AppPreferences.saveDefaultPreset(this@MainActivity, currentPresetId)
+                updateDefaultPresetSummary()
+                toast("Default preset: ${selectedStoredPreset().name}")
+            }
+        }, fullWidthButtonParams(dp(8)))
+
+        directShareCheckBox = CheckBox(this).apply {
+            text = "Skip editor for normal shares (use default preset)"
+            setOnCheckedChangeListener { _, isChecked ->
+                if (suppressSelectionCallbacks) return@setOnCheckedChangeListener
+                AppPreferences.saveDirectShareEnabled(this@MainActivity, isChecked)
+                updateDefaultPresetSummary()
+            }
+        }
+        root.addView(directShareCheckBox)
+
+        showInDirectShareCheckBox = CheckBox(this).apply {
+            text = "Show selected preset in Android Direct Share"
+            setOnCheckedChangeListener { _, isChecked ->
+                if (suppressSelectionCallbacks) return@setOnCheckedChangeListener
+                val stored = selectedStoredPreset().copy(showInDirectShare = isChecked)
+                AppPreferences.savePreset(this@MainActivity, stored)
+                DirectShareShortcutPublisher.publish(this@MainActivity)
+            }
+        }
+        root.addView(showInDirectShareCheckBox)
+
+        root.addView(sectionLabel("CareerOps action"))
+        actionSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                actions.map { it.displayName }
+            )
+            onItemSelectedListener = refreshListener()
+        }
+        root.addView(actionSpinner)
+
+        root.addView(sectionLabel("Send using"))
+        destinationSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                destinations.map { it.displayName }
+            )
+        }
+        root.addView(destinationSpinner)
+
+        root.addView(sectionLabel("Model preference"))
+        modelSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                modelPreferences.map { it.displayName }
+            )
+        }
+        root.addView(modelSpinner)
+        root.addView(TextView(this).apply {
+            text = "Model preference is stored with the preset for future routing. Android can choose the destination app, but cannot force that app's internal model; enforced model routing belongs to the future CareerOps Gateway."
+            textSize = 12f
+            setTextColor(Color.GRAY)
+            setPadding(0, dp(4), 0, 0)
+        })
+
+        root.addView(sectionLabel("Request profile"))
+        requestProfileSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                requestProfiles.map { it.displayName }
+            )
+            onItemSelectedListener = refreshListener()
+        }
+        root.addView(requestProfileSpinner)
+
+        root.addView(Button(this).apply {
+            text = "Save preset"
+            setOnClickListener { saveSelectedPreset() }
+        }, fullWidthButtonParams(dp(12)))
+
+        root.addView(sectionLabel("Shared job"))
         sourceView = infoRow("Source", "Waiting for shared content")
         root.addView(sourceView)
 
@@ -90,53 +273,6 @@ class MainActivity : Activity() {
             setPadding(0, dp(4), 0, dp(4))
         }
         root.addView(truncationView)
-
-        root.addView(sectionLabel("CareerOps action"))
-        actionSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                actions.map { it.displayName }
-            )
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long
-                ) {
-                    if (suppressSelectionCallbacks) return
-                    AppPreferences.saveAction(this@MainActivity, actions[position])
-                    refreshRenderedPayload()
-                }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-            }
-        }
-        root.addView(actionSpinner)
-
-        root.addView(sectionLabel("Send using"))
-        destinationSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                destinations.map { it.displayName }
-            )
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long
-                ) {
-                    if (suppressSelectionCallbacks) return
-                    AppPreferences.saveDestination(this@MainActivity, destinations[position])
-                }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-            }
-        }
-        root.addView(destinationSpinner)
 
         root.addView(sectionLabel("Prepared request"))
 
@@ -159,10 +295,7 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "Send"
             setOnClickListener { sendToSelectedDestination() }
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(16) })
+        }, fullWidthButtonParams(dp(16)))
 
         val rowOne = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -185,13 +318,10 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "Copy request JSON"
             setOnClickListener { copyRequestJson() }
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(8) })
+        }, fullWidthButtonParams(dp(8)))
 
         root.addView(TextView(this).apply {
-            text = "v0.2.0 • Local-only. Destination/transport abstraction added; network transport is intentionally disabled."
+            text = "v0.3.0-dev • Preset routing + Android Direct Share. Local app transports only; HTTP/Gateway transport remains disabled."
             textSize = 12f
             setTextColor(Color.GRAY)
             setPadding(0, dp(22), 0, 0)
@@ -200,18 +330,110 @@ class MainActivity : Activity() {
         return scroll
     }
 
-    private fun restoreSelections() {
-        val savedAction = AppPreferences.loadAction(this)
-        actionSpinner.setSelection(actions.indexOf(savedAction).coerceAtLeast(0))
+    private fun refreshListener(): AdapterView.OnItemSelectedListener =
+        object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                if (suppressSelectionCallbacks) return
+                refreshRenderedPayload()
+            }
 
-        val savedDestination = AppPreferences.loadDestination(this)
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+
+    private fun restoreSettings(incoming: Intent?) {
+        directShareCheckBox.isChecked = AppPreferences.loadDirectShareEnabled(this)
+        applyPresetSelectionForIntent(incoming)
+        updateDefaultPresetSummary()
+    }
+
+    private fun applyPresetSelectionForIntent(incoming: Intent?) {
+        val requestedPresetId = when {
+            incoming?.action == DirectShareContract.ACTION_OPEN_PRESET ->
+                incoming.getStringExtra(DirectShareContract.EXTRA_PRESET_ID)
+            incoming?.action == Intent.ACTION_SEND ->
+                incoming.getStringExtra(DirectShareContract.EXTRA_SHORTCUT_ID)
+            else -> null
+        }
+
+        val presetId = PresetCatalog.fromIdOrNull(requestedPresetId)?.id
+            ?: AppPreferences.loadDefaultPresetId(this)
+        val index = presetDefinitions.indexOfFirst { it.id == presetId }.coerceAtLeast(0)
+
+        val previousSuppress = suppressSelectionCallbacks
+        suppressSelectionCallbacks = true
+        presetSpinner.setSelection(index)
+        loadPresetIntoControls(presetDefinitions[index].id)
+        suppressSelectionCallbacks = previousSuppress
+    }
+
+    private fun loadPresetIntoControls(presetId: String) {
+        currentPresetId = PresetCatalog.fromId(presetId).id
+        val preset = AppPreferences.loadPreset(this, currentPresetId)
+
+        val previousSuppress = suppressSelectionCallbacks
+        suppressSelectionCallbacks = true
+
+        actionSpinner.setSelection(actions.indexOf(preset.action).coerceAtLeast(0))
         destinationSpinner.setSelection(
-            destinations.indexOfFirst { it.id == savedDestination.id }.coerceAtLeast(0)
+            destinations.indexOfFirst { it.id == preset.destinationId }.coerceAtLeast(0)
+        )
+        modelSpinner.setSelection(
+            modelPreferences.indexOf(preset.modelPreference).coerceAtLeast(0)
+        )
+        requestProfileSpinner.setSelection(
+            requestProfiles.indexOf(preset.requestProfile).coerceAtLeast(0)
+        )
+        showInDirectShareCheckBox.isChecked = preset.showInDirectShare
+
+        suppressSelectionCallbacks = previousSuppress
+    }
+
+    private fun saveSelectedPreset() {
+        val preset = workingPresetFromControls()
+        AppPreferences.savePreset(this, preset)
+        val publishResult = DirectShareShortcutPublisher.publish(this)
+
+        val shortcutMessage = when {
+            publishResult.error != null -> " • shortcut update: ${publishResult.error}"
+            publishResult.rateLimited -> " • shortcut update deferred by Android rate limit"
+            else -> " • ${publishResult.publishedCount} Direct Share preset(s)"
+        }
+        toast("${preset.name} saved$shortcutMessage")
+        updateDefaultPresetSummary()
+    }
+
+    private fun selectedStoredPreset(): CareerOpsPreset =
+        AppPreferences.loadPreset(this, currentPresetId)
+
+    private fun workingPresetFromControls(): CareerOpsPreset {
+        val base = selectedStoredPreset()
+        return base.copy(
+            action = selectedAction(),
+            destinationId = selectedDestination().id,
+            modelPreference = selectedModelPreference(),
+            requestProfile = selectedRequestProfile(),
+            showInDirectShare = showInDirectShareCheckBox.isChecked
         )
     }
 
+    private fun updateDefaultPresetSummary() {
+        val defaultPreset = AppPreferences.loadDefaultPreset(this)
+        val behavior = if (AppPreferences.loadDirectShareEnabled(this)) {
+            "normal shares send immediately"
+        } else {
+            "normal shares open the editor"
+        }
+        defaultPresetView.text = "Default: ${defaultPreset.name} • $behavior"
+    }
+
     private fun consumeIntent(incoming: Intent?) {
-        if (incoming?.action != Intent.ACTION_SEND || incoming.type?.startsWith("text/") != true) {
+        val parsed = IncomingShareReader.read(this, incoming)
+        if (parsed == null) {
             currentIntake = null
             sourceView.text = "Source\nOpen directly or share text/URL into this app"
             jobIdView.text = "Job ID\n—"
@@ -220,20 +442,6 @@ class MainActivity : Activity() {
             payloadEditor.setText(DEFAULT_PROMPT)
             return
         }
-
-        val sharedText = incoming.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
-            ?: incoming.clipData?.let { clip ->
-                if (clip.itemCount > 0) {
-                    clip.getItemAt(0).coerceToText(this)?.toString()
-                } else {
-                    null
-                }
-            }
-
-        val parsed = ShareParser.parse(
-            incoming.getStringExtra(Intent.EXTRA_SUBJECT),
-            sharedText
-        )
 
         currentIntake = parsed
         sourceView.text = "Source\n${parsed.source}"
@@ -251,11 +459,8 @@ class MainActivity : Activity() {
 
     private fun refreshRenderedPayload() {
         val intake = currentIntake ?: return
-        val request = CareerOpsRequest(
-            action = selectedAction(),
-            job = intake
-        )
-        payloadEditor.setText(CareerOpsRequestRenderer.toText(request))
+        val plan = CareerOpsRoutePlanner.plan(intake, workingPresetFromControls())
+        payloadEditor.setText(plan.payload)
         payloadEditor.setSelection(payloadEditor.text.length)
     }
 
@@ -283,7 +488,7 @@ class MainActivity : Activity() {
         val transport = TransportRegistry.transportFor(destination)
 
         if (transport == null) {
-            toast("${destination.displayName} is not enabled in v0.2.0")
+            toast("${destination.displayName} is not enabled in v0.3.0")
             return
         }
 
@@ -334,6 +539,23 @@ class MainActivity : Activity() {
             DestinationCatalog.CHATGPT
         }
 
+    private fun selectedModelPreference(): ModelPreference =
+        modelPreferences.getOrElse(modelSpinner.selectedItemPosition) {
+            ModelPreference.AUTO
+        }
+
+    private fun selectedRequestProfile(): RequestProfile =
+        requestProfiles.getOrElse(requestProfileSpinner.selectedItemPosition) {
+            RequestProfile.CAREEROPS_STANDARD
+        }
+
+    private fun showPendingRoutingError() {
+        pendingRoutingError?.let {
+            pendingRoutingError = null
+            toast(it)
+        }
+    }
+
     private fun copyToClipboard(label: String, value: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
@@ -376,6 +598,12 @@ class MainActivity : Activity() {
         ).apply {
             this.leftMargin = leftMargin
         }
+
+    private fun fullWidthButtonParams(topMargin: Int): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { this.topMargin = topMargin }
 
     private fun toast(message: String) =
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
