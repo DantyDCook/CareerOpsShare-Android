@@ -25,13 +25,6 @@ object DirectShareShortcutPublisher {
         val manager = context.getSystemService(ShortcutManager::class.java)
             ?: return ShortcutPublishResult(0, error = "ShortcutManager unavailable")
 
-        if (manager.isRateLimitingActive) {
-            return ShortcutPublishResult(
-                publishedCount = manager.dynamicShortcuts.size,
-                rateLimited = true
-            )
-        }
-
         val maxCount = manager.maxShortcutCountPerActivity
         if (maxCount <= 0) {
             return ShortcutPublishResult(0)
@@ -40,6 +33,25 @@ object DirectShareShortcutPublisher {
         val presets = AppPreferences.loadPresets(context)
             .filter { it.showInDirectShare }
             .take(minOf(maxCount, PresetCatalog.builtIns.size))
+
+        val expectedShortcutState = presets.mapIndexed { rank, preset ->
+            ShortcutState(preset.id, preset.name, rank)
+        }
+        val currentShortcutState = manager.dynamicShortcuts
+            .sortedBy { it.rank }
+            .map { ShortcutState(it.id, it.shortLabel.toString(), it.rank) }
+
+        // Avoid consuming the platform shortcut update quota when nothing changed.
+        if (currentShortcutState == expectedShortcutState) {
+            return ShortcutPublishResult(currentShortcutState.size)
+        }
+
+        if (manager.isRateLimitingActive) {
+            return ShortcutPublishResult(
+                publishedCount = manager.dynamicShortcuts.size,
+                rateLimited = true
+            )
+        }
 
         if (presets.isEmpty()) {
             manager.removeAllDynamicShortcuts()
@@ -84,4 +96,19 @@ object DirectShareShortcutPublisher {
             )
         }
     }
+
+    fun reportUsed(context: Context, presetId: String) {
+        if (PresetCatalog.fromIdOrNull(presetId) == null) return
+
+        runCatching {
+            context.getSystemService(ShortcutManager::class.java)
+                ?.reportShortcutUsed(presetId)
+        }
+    }
+
+    private data class ShortcutState(
+        val id: String,
+        val label: String,
+        val rank: Int
+    )
 }
