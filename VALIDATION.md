@@ -1,5 +1,36 @@
 # Validation Status
 
+## v0.2.1 — stable-signing release candidate
+
+Branch: `release/v0.2.1-stable-signing`
+
+### Automated validation
+
+- PASS — pull-request Android CI completed successfully on the current candidate branch.
+- PASS — Gradle unit tests completed successfully.
+- PASS — debug APK build completed successfully in CI as a regression check.
+- PASS — signed release-candidate workflow produced an installable release APK before device validation.
+- PASS — signed RC workflow verifies the APK signature with Android `apksigner` before uploading the artifact.
+
+### Stable-signing transition
+
+- PASS — permanent PKCS12 release keystore created locally and GitHub Actions signing secrets configured.
+- PASS — v0.2.1 release candidate uses `versionCode = 4` and `versionName = 0.2.1`.
+- PASS — old debug-signing lineage was removed before installing the permanent-signing candidate.
+- PENDING RECORD — copy the signer certificate SHA-256 fingerprint from the signed RC workflow summary or `signing-verification.txt` into this section before final release.
+
+### Physical-device validation
+
+- PASS — signed v0.2.1 release-candidate APK installed successfully on the physical Android device.
+- PASS — CareerOps Share appears and sharing still functions correctly with the permanent-signing candidate.
+- PASS — user-reported functional smoke test: sharing works.
+
+### Release gate
+
+PENDING — device installation and functional sharing are validated. Final release remains blocked until the permanent signer certificate SHA-256 fingerprint is recorded and verified against the locally generated keystore. After that, mark this section `Release gate: PASS`, merge the candidate PR into `main`, confirm `main` Android CI is green, then run the guarded `v0.2.1` Android Release workflow.
+
+---
+
 ## v0.2.0 — release candidate
 
 Branch: `feature/v0.2-smart-intake`
