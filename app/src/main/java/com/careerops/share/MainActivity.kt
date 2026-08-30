@@ -9,6 +9,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -78,7 +80,8 @@ class MainActivity : Activity() {
         buildInteractiveShell(
             incoming = intent,
             initialSection = restoredSection,
-            restoredSession = restoredSessionPreset(savedInstanceState)
+            restoredSession = restoredSessionPreset(savedInstanceState),
+            restoredIntakeText = savedInstanceState?.getString(STATE_INTAKE_TEXT)
         )
     }
 
@@ -90,6 +93,7 @@ class MainActivity : Activity() {
             outState.putString(STATE_SESSION_MODEL, preset.modelPreference.id)
             outState.putString(STATE_SESSION_REQUEST_PROFILE, preset.requestProfile.id)
         }
+        outState.putString(STATE_INTAKE_TEXT, currentIntake?.rawSharedContent)
         super.onSaveInstanceState(outState)
     }
 
@@ -100,7 +104,7 @@ class MainActivity : Activity() {
         if (tryImmediateRoute(intent)) return
 
         if (!uiBuilt) {
-            buildInteractiveShell(intent, AppSection.SHARE, null)
+            buildInteractiveShell(intent, AppSection.SHARE, null, null)
         } else {
             consumeIncomingIntent(intent)
             showSection(AppSection.SHARE)
@@ -148,7 +152,8 @@ class MainActivity : Activity() {
     private fun buildInteractiveShell(
         incoming: Intent?,
         initialSection: AppSection,
-        restoredSession: CareerOpsPreset?
+        restoredSession: CareerOpsPreset?,
+        restoredIntakeText: String?
     ) {
         shellRoot = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -223,6 +228,9 @@ class MainActivity : Activity() {
 
         uiBuilt = true
         consumeIncomingIntent(incoming)
+        if (currentIntake == null && !restoredIntakeText.isNullOrBlank()) {
+            currentIntake = ShareParser.parse(null, restoredIntakeText)
+        }
         if (restoredSession != null) currentSessionPreset = restoredSession
         showSection(initialSection)
         showPendingRoutingError()
@@ -332,27 +340,38 @@ class MainActivity : Activity() {
             )
         )
 
-        root.addView(sectionLabel("Shared job"))
-        val intake = currentIntake
-        if (intake == null) {
-            root.addView(
-                infoCard(
-                    "No shared job loaded.\n\nShare a LinkedIn, Indeed, browser, or text job posting into CareerOps Share."
-                )
-            )
-        } else {
-            val jobId = intake.jobId ?: "Not detected"
-            val url = intake.canonicalUrl ?: "No URL detected"
-            root.addView(infoCard("Source: ${intake.source}\nJob ID: $jobId\n$url"))
-            if (intake.wasTruncated) {
-                root.addView(TextView(this).apply {
-                    text = "Very large shared text was capped at 100,000 characters."
-                    textSize = 12f
-                    setTextColor(Color.rgb(210, 132, 53))
-                    setPadding(0, dp(6), 0, 0)
-                })
-            }
+        root.addView(sectionLabel("Job link or shared text"))
+        val intakeEditor = EditText(this).apply {
+            minLines = 2
+            maxLines = 6
+            gravity = Gravity.TOP or Gravity.START
+            textSize = 14f
+            setTextColor(COLOR_PRIMARY_TEXT)
+            setHintTextColor(COLOR_SECONDARY_TEXT)
+            hint = "Paste a LinkedIn, Indeed, browser URL, or shared job text"
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = roundedBox(COLOR_SURFACE, COLOR_BORDER)
+            setText(currentIntake?.rawSharedContent.orEmpty())
         }
+        root.addView(
+            intakeEditor,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        root.addView(
+            helperText(
+                if (currentIntake == null) {
+                    "Paste a job here to build the CareerOps request. Android shares populate this automatically."
+                } else {
+                    "Loaded automatically from the share. Edit this field to replace or correct the intake."
+                }
+            )
+        )
+
+        val intakeInfoView = infoCard(intakeSummary(currentIntake))
+        root.addView(intakeInfoView, marginTop = dp(8))
 
         root.addView(sectionLabel("Prepared request"))
         payloadEditor = EditText(this).apply {
@@ -372,6 +391,15 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
+
+        intakeEditor.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+
+            override fun afterTextChanged(s: Editable?) {
+                updateManualIntake(s?.toString().orEmpty(), intakeInfoView)
+            }
+        })
 
         val destination = DestinationCatalog.fromId(route.destinationId)
         root.addView(Button(this).apply {
@@ -720,6 +748,21 @@ class MainActivity : Activity() {
         currentIntake = IncomingShareReader.read(this, incoming)
     }
 
+    private fun updateManualIntake(rawValue: String, intakeInfoView: TextView) {
+        val value = rawValue.trim()
+        currentIntake = if (value.isBlank()) null else ShareParser.parse(null, value)
+        intakeInfoView.text = intakeSummary(currentIntake)
+        payloadEditor?.setText(renderCurrentPayload())
+    }
+
+    private fun intakeSummary(intake: JobShareIntake?): String {
+        if (intake == null) return "No job loaded yet."
+        val jobId = intake.jobId ?: "Not detected"
+        val url = intake.canonicalUrl ?: "No URL detected"
+        val truncation = if (intake.wasTruncated) "\nShared text was capped at 100,000 characters." else ""
+        return "Source: ${intake.source}\nJob ID: $jobId\n$url$truncation"
+    }
+
     private fun renderCurrentPayload(): String {
         val intake = currentIntake ?: return DEFAULT_PROMPT
         val route = currentSessionPreset
@@ -769,7 +812,7 @@ class MainActivity : Activity() {
 
     private fun copyRequestJson() {
         val request = currentRequest() ?: run {
-            toast("Share a job first")
+            toast("Add or share a job first")
             return
         }
         copyToClipboard("CareerOps request JSON", CareerOpsRequestRenderer.toJson(request))
@@ -784,6 +827,10 @@ class MainActivity : Activity() {
     }
 
     private fun currentPayload(): String? {
+        if (currentIntake == null) {
+            toast("Add or share a job first")
+            return null
+        }
         val payload = payloadEditor?.text?.toString()?.trim().orEmpty()
         if (payload.isBlank()) {
             toast("Nothing to send")
@@ -931,12 +978,13 @@ class MainActivity : Activity() {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val DEFAULT_PROMPT = "Analyze this job using CareerOps:"
+        private const val DEFAULT_PROMPT = "Paste or share a job above to build the CareerOps request."
         private const val STATE_SECTION = "careerops.active_section"
         private const val STATE_SESSION_ACTION = "careerops.session.action"
         private const val STATE_SESSION_DESTINATION = "careerops.session.destination"
         private const val STATE_SESSION_MODEL = "careerops.session.model"
         private const val STATE_SESSION_REQUEST_PROFILE = "careerops.session.request_profile"
+        private const val STATE_INTAKE_TEXT = "careerops.session.intake_text"
 
         private const val MENU_SHARE = 100
         private const val MENU_QUICK_SHARES = 101
