@@ -1,5 +1,46 @@
 # Validation Status
 
+## v0.2.1 — stable-signing release candidate
+
+Branch: `release/v0.2.1-stable-signing`
+
+### Automated validation
+
+- PASS — pull-request Android CI completed successfully on the current candidate branch.
+- PASS — Gradle unit tests completed successfully.
+- PASS — debug APK build completed successfully in CI as a regression check.
+- PASS — signed release-candidate workflow produced an installable release APK before device validation.
+- PASS — signed RC workflow verifies the APK signature with Android `apksigner` before uploading the artifact.
+
+### Stable-signing transition
+
+- PASS — permanent PKCS12 release keystore created locally and GitHub Actions signing secrets configured.
+- PASS — v0.2.1 release candidate uses `versionCode = 4` and `versionName = 0.2.1`.
+- PASS — old debug-signing lineage was removed before installing the permanent-signing candidate.
+- PASS — signed RC contains exactly one signer and verifies with APK Signature Scheme v2.
+- PASS — signed RC signer identity: `CN=CareerOps Share, OU=Mobile, O=CareerOps, C=US`.
+- PASS — permanent signer certificate SHA-256 fingerprint recorded and confirmed against the local permanent keystore:
+
+```text
+e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
+```
+
+- PASS — permanent `careerops-share-release.p12` keystore has a second secure backup copy.
+
+### Physical-device validation
+
+- PASS — signed v0.2.1 release-candidate APK installed successfully on the physical Android device.
+- PASS — CareerOps Share appears and sharing still functions correctly with the permanent-signing candidate.
+- PASS — user-reported functional smoke test: sharing works.
+
+### Release gate
+
+Release gate: PASS
+
+The signed build, APK signature verification, permanent-key fingerprint match, keystore backup, physical installation, functional sharing test, and PR Android CI are complete. The candidate is cleared to merge into `main`. After merge, `main` Android CI must pass before the guarded `v0.2.1` Android Release workflow is started.
+
+---
+
 ## v0.2.0 — release candidate
 
 Branch: `feature/v0.2-smart-intake`
