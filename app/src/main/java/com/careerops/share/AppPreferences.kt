@@ -6,16 +6,23 @@ object AppPreferences {
     private const val FILE_NAME = "careerops_share_preferences"
 
     // v0.2 compatibility keys. They are retained so an in-place upgrade can seed
-    // the first v0.3 preset without losing the user's last action/destination.
+    // v0.3 state without losing the user's last action/destination.
     private const val KEY_ACTION = "default_action"
     private const val KEY_DESTINATION = "default_destination"
 
     private const val KEY_V03_MIGRATED = "v03_preset_migration_complete"
     private const val KEY_DIRECT_SHARE_CURATION_MIGRATED = "v03_direct_share_curation_complete"
+    private const val KEY_REGULAR_DEFAULTS_MIGRATED = "v03_regular_defaults_migration_complete"
     private const val KEY_DEFAULT_PRESET = "default_preset_id"
     private const val KEY_DIRECT_SHARE_ENABLED = "direct_share_enabled"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_SYSTEM_BAR_MODE = "system_bar_mode"
+
+    private const val KEY_REGULAR_ACTION = "regular_share.action"
+    private const val KEY_REGULAR_DESTINATION = "regular_share.destination"
+    private const val KEY_REGULAR_MODEL = "regular_share.model"
+    private const val KEY_REGULAR_REQUEST_PROFILE = "regular_share.request_profile"
+
     private const val PRESET_PREFIX = "preset."
 
     fun ensureV03Migration(context: Context) {
@@ -44,6 +51,7 @@ object AppPreferences {
         }
 
         ensureDirectShareCurationMigration(context)
+        ensureRegularShareDefaultsMigration(context)
     }
 
     private fun ensureDirectShareCurationMigration(context: Context) {
@@ -52,7 +60,7 @@ object AppPreferences {
 
         // The first routing RC published all built-ins by default. Curate the
         // fast-action surface on upgrade: Quick Analyze stays pinned; the more
-        // consequential presets remain available in-app but become explicit opt-ins.
+        // consequential profiles remain saved but become explicit opt-ins.
         PresetCatalog.builtIns.forEach { definition ->
             val current = loadPreset(context, definition.id)
             savePreset(
@@ -65,6 +73,28 @@ object AppPreferences {
 
         prefs.edit()
             .putBoolean(KEY_DIRECT_SHARE_CURATION_MIGRATED, true)
+            .apply()
+    }
+
+    private fun ensureRegularShareDefaultsMigration(context: Context) {
+        val prefs = preferences(context)
+        if (prefs.getBoolean(KEY_REGULAR_DEFAULTS_MIGRATED, false)) return
+
+        // Preserve the current v0.3 regular-share behavior exactly once, then
+        // decouple it from the Quick Share profile library going forward.
+        val previousDefault = loadDefaultPreset(context)
+        saveRegularShareDefaults(
+            context,
+            RegularShareDefaults(
+                action = previousDefault.action,
+                destinationId = previousDefault.destinationId,
+                modelPreference = previousDefault.modelPreference,
+                requestProfile = previousDefault.requestProfile
+            )
+        )
+
+        prefs.edit()
+            .putBoolean(KEY_REGULAR_DEFAULTS_MIGRATED, true)
             .apply()
     }
 
@@ -110,6 +140,47 @@ object AppPreferences {
             .apply()
     }
 
+    fun clearDirectShareSelections(context: Context) {
+        loadPresets(context).forEach { preset ->
+            if (preset.showInDirectShare) {
+                savePreset(context, preset.copy(showInDirectShare = false))
+            }
+        }
+    }
+
+    fun loadRegularShareDefaults(context: Context): RegularShareDefaults {
+        val prefs = preferences(context)
+        return RegularShareDefaults(
+            action = CareerOpsAction.fromId(
+                prefs.getString(KEY_REGULAR_ACTION, CareerOpsAction.ANALYZE.id)
+            ),
+            destinationId = prefs.getString(
+                KEY_REGULAR_DESTINATION,
+                DestinationCatalog.CHATGPT.id
+            ) ?: DestinationCatalog.CHATGPT.id,
+            modelPreference = ModelPreference.fromId(
+                prefs.getString(KEY_REGULAR_MODEL, ModelPreference.AUTO.id)
+            ),
+            requestProfile = RequestProfile.fromId(
+                prefs.getString(
+                    KEY_REGULAR_REQUEST_PROFILE,
+                    RequestProfile.CAREEROPS_STANDARD.id
+                )
+            )
+        )
+    }
+
+    fun saveRegularShareDefaults(context: Context, defaults: RegularShareDefaults) {
+        preferences(context).edit()
+            .putString(KEY_REGULAR_ACTION, defaults.action.id)
+            .putString(KEY_REGULAR_DESTINATION, defaults.destinationId)
+            .putString(KEY_REGULAR_MODEL, defaults.modelPreference.id)
+            .putString(KEY_REGULAR_REQUEST_PROFILE, defaults.requestProfile.id)
+            .apply()
+    }
+
+    // Retained for compatibility with the first v0.3 RC. Quick Share profiles no
+    // longer define the normal application's regular-share defaults.
     fun loadDefaultPresetId(context: Context): String {
         val stored = preferences(context).getString(
             KEY_DEFAULT_PRESET,
@@ -158,22 +229,23 @@ object AppPreferences {
             .apply()
     }
 
-    // Compatibility helpers for any code paths still using the v0.2 vocabulary.
+    // Compatibility helpers for code paths still using the v0.2 vocabulary now
+    // point at the independent regular-share defaults.
     fun loadAction(context: Context): CareerOpsAction =
-        loadDefaultPreset(context).action
+        loadRegularShareDefaults(context).action
 
     fun saveAction(context: Context, action: CareerOpsAction) {
-        val preset = loadDefaultPreset(context)
-        savePreset(context, preset.copy(action = action))
+        val defaults = loadRegularShareDefaults(context)
+        saveRegularShareDefaults(context, defaults.copy(action = action))
         preferences(context).edit().putString(KEY_ACTION, action.id).apply()
     }
 
     fun loadDestination(context: Context): DestinationProfile =
-        DestinationCatalog.fromId(loadDefaultPreset(context).destinationId)
+        DestinationCatalog.fromId(loadRegularShareDefaults(context).destinationId)
 
     fun saveDestination(context: Context, destination: DestinationProfile) {
-        val preset = loadDefaultPreset(context)
-        savePreset(context, preset.copy(destinationId = destination.id))
+        val defaults = loadRegularShareDefaults(context)
+        saveRegularShareDefaults(context, defaults.copy(destinationId = destination.id))
         preferences(context).edit().putString(KEY_DESTINATION, destination.id).apply()
     }
 
