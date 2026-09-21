@@ -1,110 +1,146 @@
 # CareerOps Share for Android
 
-CareerOps Share is the Android intake edge for the CareerOps job-application pipeline. It appears in the Android Sharesheet, converts a shared job posting into a structured CareerOps request, and sends that request through a user-selected local destination.
+CareerOps Share is the Android intake edge for the CareerOps job-application pipeline. It appears in the Android Sharesheet, normalizes shared job postings, builds a structured CareerOps request, and routes that request through a selected local destination.
 
-**Published release:** `0.2.0`  
-**Current signing work:** stable release-signing infrastructure on `chore/stable-release-signing`
+**Published stable release:** `0.2.1`  
+**Current development:** `0.3.0` / versionCode `5` on `feature/v0.3.0-direct-share-presets`
 
-## v0.2 application overview
+## v0.3.0 — Direct Share / Preset Routing
 
-v0.2 changed CareerOps Share from a ChatGPT-specific forwarding utility into a provider-neutral smart intake client.
+v0.3 adds preset-driven fast paths without coupling CareerOps Share to one AI vendor or model.
 
-It includes:
+Built-in presets:
 
-- structured job intake,
-- LinkedIn/Indeed job-ID extraction,
-- canonical URL generation,
-- safe tracking/share-parameter cleanup,
-- CareerOps action selection,
-- persistent local defaults,
-- destination profiles,
-- transport abstraction,
-- ChatGPT as one destination rather than a hard-coded architecture dependency,
-- Android system chooser as a first-class destination,
-- structured text and JSON request rendering,
-- JVM unit tests,
-- architecture/request-schema documentation.
+- **Quick Analyze** → `ANALYZE`
+- **Build & Store** → `ANALYZE_BUILD_STORE`
+- **Full Application** → `ANALYZE_BUILD_STORE_COVER_LETTER`
 
-The app remains intentionally **local-only** in v0.2. HTTP/API/Webhook delivery is designed into the boundary but not enabled yet.
+Each preset stores:
 
-## User flow
+- CareerOps action,
+- destination,
+- model preference,
+- request profile,
+- auto-forward behavior,
+- whether it is published as an Android Direct Share target.
+
+The initial destinations remain:
+
+- **ChatGPT** — explicit Android app destination.
+- **Choose Android app…** — Android system chooser.
+
+The app remains local-only in v0.3. HTTP/API/Webhook delivery is still intentionally disabled.
+
+## Share behavior
+
+v0.3 supports three paths.
 
 ```mermaid
-flowchart LR
-    A[Job post] --> B[Android Share]
-    B --> C[CareerOps Share]
-    C --> D[Detect source / job ID]
-    D --> E[Canonicalize job]
-    E --> F[Choose CareerOps action]
-    F --> G[Build CareerOpsRequest]
-    G --> H[Choose destination]
-    H --> I[ChatGPT]
-    H --> J[Other Android app]
-    H -. future .-> K[CareerOps Gateway]
+flowchart TD
+    A[LinkedIn / Indeed / Browser] --> B[Android Sharesheet]
+
+    B --> C[CareerOps Share app target]
+    C --> D{Skip editor enabled?}
+    D -- No --> E[Interactive editor]
+    D -- Yes --> F[Load default preset]
+
+    B --> G[CareerOps Direct Share preset]
+    G --> H[Load selected preset]
+
+    F --> I[Parse + normalize]
+    H --> I
+    E --> I
+
+    I --> J[CareerOpsRoutePlanner]
+    J --> K[CareerOpsRequest]
+    K --> L[Request renderer]
+    L --> M[Destination transport]
+
+    M --> N[ChatGPT]
+    M --> O[Android chooser]
+    M -. future .-> P[CareerOps Gateway]
+
+    M -. failure .-> E
 ```
 
-## CareerOps actions
+### Normal CareerOps Share target
 
-- **Analyze**
-- **Analyze + Build & Store**
-- **Analyze + Build & Store + Cover Letter**
+By default, selecting **CareerOps Share** still opens the editor. The user can enable:
 
-The selected action and destination are stored locally as defaults.
+> Skip editor for normal shares (use default preset)
 
-## Destinations
+When enabled, a normal share is parsed, rendered, and forwarded with the saved default preset before the editor UI is built.
 
-Enabled destinations:
+### Direct Share preset
 
-- **ChatGPT** — direct Android package target.
-- **Choose Android app…** — standard Android chooser and therefore compatible with other apps that accept `ACTION_SEND`.
+Android Sharing Shortcuts publish enabled CareerOps presets into the Direct Share row. Selecting one provides the preset shortcut ID with the incoming `ACTION_SEND`; CareerOps Share resolves that preset and routes immediately.
 
-Future transport types can include explicitly supported Android AI clients, deep links/web clients, HTTP POST, webhooks, or the CareerOps Gateway.
+The app uses the modern Sharing Shortcuts mechanism rather than the deprecated `ChooserTargetService` path.
+
+## Preset editing
+
+The in-app control panel can:
+
+- choose a preset,
+- set the selected preset as default,
+- enable/disable normal-share auto-forward,
+- choose CareerOps action,
+- choose destination,
+- choose model preference,
+- choose CareerOps Standard text vs CareerOps JSON request profile,
+- show/hide a preset in Android Direct Share,
+- save and republish preset shortcuts.
+
+Preset storage remains in local `SharedPreferences` for this first v0.3 implementation. The storage boundary is isolated so custom user-created presets can migrate to DataStore later without changing the route planner.
+
+## Model preference
+
+`ModelPreference` is intentionally separate from `DestinationProfile`.
+
+Android can reliably select a destination app, but an Android share intent generally cannot force the internal model selected inside ChatGPT or another AI client. In v0.3 the preference is therefore saved as routing metadata for future use.
+
+The future CareerOps Gateway / Model Broker can enforce model routing server-side without changing Android preset semantics.
+
+## Core architecture
+
+```text
+Incoming ACTION_SEND
+        ↓
+IncomingShareReader
+        ↓
+ShareParser
+        ↓
+JobShareIntake
+        ↓
+CareerOpsPreset
+        ↓
+CareerOpsRoutePlanner
+        ↓
+CareerOpsRequest
+        ↓
+CareerOpsRequestRenderer
+        ↓
+DestinationProfile
+        ↓
+TransportRegistry
+        ↓
+AndroidAppTransport / AndroidChooserTransport
+```
 
 See [`docs/DESIGN.md`](docs/DESIGN.md) and [`docs/REQUEST_SCHEMA.md`](docs/REQUEST_SCHEMA.md).
 
-## Stable GitHub Release signing
+## CareerOps request contract
 
-The repository is moving GitHub Releases to one permanent CareerOps Share signing identity and signed **release APKs** instead of debug APKs.
+The Android application version and request-schema version are independent.
 
-```mermaid
-flowchart LR
-    A[Permanent PKCS12 key] --> B[GitHub Actions secrets]
-    B --> C[Android Release Candidate]
-    C --> D[Signed RC APK]
-    D --> E[Physical-device validation]
-    E --> F[Merge release candidate]
-    F --> G[Guarded Android Release]
-    G --> H[Signed GitHub Release APK]
-```
+- Android app: `0.3.0` development
+- CareerOps request schema: `1.0`
 
-The private keystore and passwords are never committed. Gradle reads signing credentials from environment variables supplied by GitHub Actions secrets. The workflow verifies the final APK with Android `apksigner` and reports the signer SHA-256 fingerprint.
-
-Full setup and backup instructions:
-
-[`docs/SIGNING.md`](docs/SIGNING.md)
-
-Full release-candidate flow:
-
-[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
-
-### Rollout order
-
-The signing workflows first have to exist on `main` so GitHub can expose **Android Release Candidate** as a manual workflow. After this infrastructure PR merges:
-
-1. create/back up the permanent key and configure GitHub Actions secrets,
-2. create the first stable-signing release-candidate branch (planned `0.2.1` / versionCode `4`),
-3. run **Android Release Candidate** from that branch,
-4. validate the signed APK on the physical device and record the signer fingerprint,
-5. merge the release candidate,
-6. run the guarded signed release workflow.
-
-### Signing-transition note
-
-The previous v0.1.1/v0.2.0 builds used debug signing. The first stable-signed APK will normally require a **one-time uninstall/reinstall** when crossing to the new permanent certificate. Future stable-signed versions can upgrade normally as long as the permanent keystore is preserved.
+The request itself remains transport-neutral. Preset destination and model-routing metadata are not required to mutate the CareerOps request schema.
 
 ## Privacy / permissions
 
-v0.2 has:
+v0.3 still has:
 
 - no `INTERNET` permission,
 - no storage permission,
@@ -112,7 +148,26 @@ v0.2 has:
 - no model-provider API key,
 - no background network task.
 
-It only receives text explicitly shared by the user and sends/copies data after a user action.
+The app only processes content explicitly shared by the user and routes it through local Android intents.
+
+## Stable release signing
+
+v0.2.1 established the permanent CareerOps Share release signing identity.
+
+The private PKCS12 keystore and passwords are never committed. GitHub Actions materializes the key temporarily from repository secrets, builds `assembleRelease`, verifies the APK with `apksigner`, reports the signer SHA-256 fingerprint, publishes the signed APK/checksum/certificate record, then removes the temporary runner keystore.
+
+Permanent signer SHA-256 established by v0.2.1:
+
+```text
+e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
+```
+
+See:
+
+- [`docs/SIGNING.md`](docs/SIGNING.md)
+- [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)
+
+The v0.3 feature branch does not change the release-signing identity or release workflow.
 
 ## Build configuration
 
@@ -122,12 +177,10 @@ It only receives text explicitly shared by the user and sends/copies data after 
 - minSdk: 26
 - Java: 17+
 - Kotlin: AGP 9 built-in Kotlin
-- current versionCode: 3
-- current versionName: 0.2.0
+- development versionCode: 5
+- development versionName: 0.3.0
 
 ## Development build
-
-Normal development and CI continue to use debug builds and do not require the permanent signing key.
 
 ```powershell
 .\gradlew.bat clean test assembleDebug
@@ -139,66 +192,34 @@ Debug APK:
 app\build\outputs\apk\debug\app-debug.apk
 ```
 
-## Signed release-candidate build
+## v0.3 device acceptance targets
 
-Once the signing infrastructure is merged and repository signing secrets are configured, the canonical signed RC is produced by:
+Before v0.3 can merge/release, validate at minimum:
 
-**Actions → Android Release Candidate → Run workflow**
+- ordinary CareerOps Share target still appears,
+- interactive review path still works,
+- Quick Analyze / Build & Store / Full Application presets can be saved,
+- selected default preset persists,
+- normal-share skip-editor setting persists,
+- enabled preset shortcuts surface in Android Direct Share,
+- each Direct Share preset routes the correct CareerOps action,
+- ChatGPT direct destination works,
+- system chooser destination works,
+- failed direct route falls back to the interactive editor,
+- CareerOps Standard and CareerOps JSON request profiles render correctly,
+- model preference persists without falsely claiming to switch the destination app's internal model,
+- v0.2.1 stable-signed install upgrades normally to a v0.3 RC signed by the same permanent key.
 
-Select the release-candidate branch in **Use workflow from**. The workflow:
+Record signed-RC results in [`VALIDATION.md`](VALIDATION.md) before release.
 
-1. runs tests,
-2. builds `assembleRelease`,
-3. signs with the permanent CareerOps Share key,
-4. verifies the APK with `apksigner`,
-5. reports the signer SHA-256 fingerprint,
-6. uploads a short-lived signed RC artifact for physical-device testing,
-7. does **not** create a tag or release.
+## UI backlog
 
-## GitHub Actions and Releases
+Tracked separately from the routing core:
 
-- `.github/workflows/android-ci.yml` — ordinary tests/debug build for pushes and PRs.
-- `.github/workflows/android-release-candidate.yml` — manual signed RC build for device validation.
-- `.github/workflows/android-release.yml` — guarded signed final release from current `main`.
+- **#5** — theme controls: light, dark, system, optional scheduled behavior.
+- **#6** — edge-to-edge/system-bar behavior: status bar, navigation bar, gesture/3-button navigation, transient bars and insets.
 
-The final release workflow requires confirmations for:
-
-- PR merged,
-- signed physical-device validation,
-- `VALIDATION.md` updated,
-- green `main` CI,
-- permanent signer fingerprint verified,
-- checklist/release notes reviewed.
-
-It also automatically verifies the version/tag, signing secrets, keystore/alias, tests, signed `assembleRelease`, APK signature, SHA-256, and release assets.
-
-Final stable release assets use:
-
-```text
-CareerOpsShare-vX.Y.Z.apk
-CareerOpsShare-vX.Y.Z.apk.sha256
-CareerOpsShare-vX.Y.Z-signing-certificate.txt
-```
-
-Generated APKs and signing material belong outside Git history.
-
-## Device acceptance checklist
-
-Test at minimum:
-
-- CareerOps Share appears in Android Sharesheet.
-- LinkedIn source/job ID/canonical URL are correct.
-- Indeed source/`jk`/canonical URL are correct.
-- all three CareerOps actions regenerate correctly.
-- action preference persists.
-- destination preference persists.
-- ChatGPT destination launches ChatGPT.
-- system chooser works.
-- missing explicit app target falls back safely.
-- editable request can still be copied and sent.
-- JSON request can be copied.
-
-Record candidate results and the signer SHA-256 fingerprint in [`VALIDATION.md`](VALIDATION.md).
+These can be developed on v0.3 after the routing baseline is stable, but are not prerequisites for proving Direct Share architecture.
 
 ## Roadmap
 
@@ -210,14 +231,18 @@ Android share → CareerOps payload → ChatGPT.
 
 Structured intake, actions, destination profiles, local transports, JSON schema.
 
-### v0.2.1 — planned stable-signing transition
+### v0.2.1 — permanent signing identity
 
-Permanent release certificate, signed RC workflow, signed GitHub Release APKs.
+Permanent release certificate, signed RC workflow, guarded signed GitHub Release APKs.
 
-### v0.3.0 — authenticated network transport
+### v0.3.0 — Direct Share / Preset Routing
 
-Planned: HTTPS POST/webhook transport, secure endpoint configuration, authentication, timeout/retry semantics, request IDs, acknowledgement/status handling, duplicate-submission protection, and optional offline queue.
+Preset model/editor, default route, optional normal-share auto-forward, Android Sharing Shortcuts, request profiles, model-preference metadata, fast routing and interactive fallback.
 
-### Later — CareerOps control-plane integration
+### v0.4.0 — CareerOps Gateway / HTTPS transport
+
+Planned: authenticated HTTPS POST/webhook transport, endpoint configuration, request IDs, acknowledgement/status, timeout/retry behavior, duplicate-submission protection and optional offline queue.
+
+### Later — control-plane / model broker integration
 
 CareerOps Gateway → Agent Control Plane → Model Broker → selected worker model(s) → results.

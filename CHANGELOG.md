@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — in development
+
+- Started preset-driven routing architecture.
+- Added `CareerOpsPreset` with stable ID/name, CareerOps action, destination, model preference, request profile, auto-forward behavior, and Direct Share visibility.
+- Added built-in Quick Analyze, Build & Store, and Full Application presets.
+- Added local preset persistence and v0.2 action/destination migration behavior.
+- Added configurable default preset.
+- Added explicit opt-in to skip the editor for normal shares and immediately use the default preset.
+- Added Android Sharing Shortcuts / Direct Share publication for enabled presets.
+- Added fast routing before editor UI construction when a Direct Share preset or enabled default auto-forward path is used.
+- Added interactive fallback when an immediate route cannot be completed.
+- Added Android-independent `CareerOpsRoutePlanner` and unit coverage.
+- Added CareerOps Standard text and CareerOps JSON request profiles.
+- Added model-preference metadata while explicitly keeping Android app model selection advisory rather than falsely claiming model enforcement.
+- Bumped Android development version to 0.3.0 / versionCode 5.
+- Kept v0.3 local-only: no `INTERNET` permission and no HTTP/Gateway transport implementation.
+- Kept the v0.2.1 permanent signing identity and guarded release architecture unchanged.
+
 ## 0.2.1 — stable-signing transition
 
 - Added a permanent release-signing architecture for GitHub-distributed APKs.

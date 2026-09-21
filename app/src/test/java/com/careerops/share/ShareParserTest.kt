@@ -85,6 +85,26 @@ class ShareParserTest {
     }
 
     @Test
+    fun manualUrlInputBuildsStructuredCareerOpsRequest() {
+        val intake = ShareParser.parse(
+            null,
+            "https://www.linkedin.com/jobs/view/4457534369/?trackingId=manual"
+        )
+        val request = CareerOpsRequest(
+            action = CareerOpsAction.ANALYZE_BUILD_STORE,
+            job = intake
+        )
+
+        val rendered = CareerOpsRequestRenderer.toText(request)
+
+        assertEquals("LinkedIn", intake.source)
+        assertEquals("4457534369", intake.jobId)
+        assertEquals("https://www.linkedin.com/jobs/view/4457534369/", intake.canonicalUrl)
+        assertTrue(rendered.contains("schema_version: 1.0"))
+        assertTrue(rendered.contains("action: ANALYZE_BUILD_STORE"))
+    }
+
+    @Test
     fun requestRendererPreservesCompatibilityPromptAndAction() {
         val intake = ShareParser.parse(null, "https://www.linkedin.com/jobs/view/4453238792/")
         val request = CareerOpsRequest(
