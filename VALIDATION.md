@@ -36,7 +36,7 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 - PASS — debug APK compiled with Android SDK 36 / JDK 17 in CI.
 - PENDING — final/current-head CI after this validation-documentation commit.
 - PASS — final combined v0.3 branch Android CI #56 completed successfully on exact signed candidate `5b48c102b4ed6f98d37aefbcfcef2f1838c47ccf`.
-- PASS — Android Release Candidate run #8 completed successfully on exact candidate `5b48c102b4ed6f98d37aefbcfcef2f1838c47ccf`; artifact `careerops-share-v0.3.0-signed-rc` (ID `9736728119`) recorded with workflow artifact digest `sha256:a66bcaa69bad3e043fcf8932ab9b68a162be0257e20e3e7cdc3a00232685749e` and signer SHA-256 `e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9`.
+- PASS — Android Release Candidate run #9 completed successfully on exact candidate `5b48c102b4ed6f98d37aefbcfcef2f1838c47ccf`; artifact `careerops-share-v0.3.0-signed-rc` (ID `10589064268`) recorded with workflow artifact digest `sha256:581f82a0660c15b3186b926b138f4ddd5dd6e26c0c4ff3a2fda284bd670dbb33` and signer SHA-256 `e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9`.
 
 ### Physical-device upgrade validation
 
