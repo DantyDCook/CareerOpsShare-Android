@@ -35,8 +35,8 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 - PASS — unit coverage added for `DirectShareSlots` normalization and independent `RegularShareDefaults` session conversion.
 - PASS — debug APK compiled with Android SDK 36 / JDK 17 in CI.
 - PENDING — final/current-head CI after this validation-documentation commit.
-- PENDING — final combined v0.3 branch CI after stacked UI merge.
-- PENDING — signed final-candidate workflow metadata/fingerprint independently recorded for the release gate.
+- PASS — final combined v0.3 branch Android CI #56 completed successfully on exact signed candidate `5b48c102b4ed6f98d37aefbcfcef2f1838c47ccf`.
+- PASS — Android Release Candidate run #8 completed successfully on exact candidate `5b48c102b4ed6f98d37aefbcfcef2f1838c47ccf`; artifact `careerops-share-v0.3.0-signed-rc` (ID `9736728119`) recorded with workflow artifact digest `sha256:a66bcaa69bad3e043fcf8932ab9b68a162be0257e20e3e7cdc3a00232685749e` and signer SHA-256 `e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9`.
 
 ### Physical-device upgrade validation
 
@@ -54,10 +54,10 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 - PASS — changing the review action from **Analyze** to **Build & Store** immediately regenerates the prepared request with `ANALYZE_BUILD_STORE`.
 - PASS — review-time route selection remains usable after the default/profile separation.
 - PENDING — explicitly re-verify that **Skip editor for normal shares** disabled always opens the interactive editor.
-- PENDING — explicit LinkedIn source/job-ID/canonical-URL regression check on the final combined candidate.
-- PENDING — explicit Indeed source/`jk`/canonical-URL regression check on the final combined candidate.
-- PENDING — explicit CareerOps JSON request-profile smoke test on the final combined candidate.
-- PENDING — explicit Android chooser smoke test on the final combined candidate.
+- PASS — LinkedIn source/job-ID/canonical-URL regression passed on the final combined candidate.
+- PASS — Indeed source/`jk`/canonical-URL regression passed on the final combined candidate.
+- PASS — CareerOps JSON request-profile / copy smoke test passed on the final combined candidate.
+- PASS — Android chooser (`Other app…`) smoke test passed on the final combined candidate; the prepared request remained intact and could be handed off successfully.
 
 ### Quick Share profile behavior
 
@@ -71,8 +71,8 @@ e77ad35df3c7444a8573693e4d83892a871c06cedebb7c21214f3fa55a9158d9
 - PASS — clearing Direct Share does not prevent the saved Quick Share profile from being selected again.
 - PASS — restoring a saved Quick Share after clearing republishes it and the quick-share route works again.
 - PASS — Android shortcut rank is deterministic in code: Slot 1 then Slot 2.
-- PENDING — explicit physical test that selecting the same profile into the opposite slot does not publish a duplicate.
-- PENDING — explicit final-candidate routing check for Full Application when selected into a slot.
+- PASS — assigning the same Quick Share profile to the opposite Direct Share slot did not publish an unintended duplicate or leave inconsistent shortcut state.
+- PASS — Full Application selected into a Direct Share slot routed with the expected Full Application request/profile on the final combined candidate.
 
 ### Quick Share architecture decisions
 
@@ -112,9 +112,9 @@ Active Android Direct Share
 
 ### Failure fallback
 
-- PENDING — configure/use a route whose explicit destination cannot be completed.
-- PENDING — immediate routing failure preserves the original incoming share and opens the interactive editor rather than losing the request.
-- PENDING — user can select another destination and send successfully.
+- PASS — an explicit destination failure was exercised on the physical device.
+- PASS — immediate routing failure preserved the original incoming share and opened the interactive editor rather than losing the request.
+- PASS — another destination could then be selected and the request sent successfully.
 
 ### Security assertions
 
@@ -139,11 +139,11 @@ v0.3 must retain:
 
 ### Release gate
 
-Release gate: PENDING — final release-level regression and signing record only.
+Release gate: PASS FOR MAIN MERGE — all required v0.3.0 pre-merge physical-device and signed-candidate gates are complete. Post-merge `main` CI and the guarded final Android Release workflow remain release-publication gates.
 
-The v0.3 routing core, in-place signing upgrade, ordinary share path, independent regular-share defaults, live prompt regeneration, two explicit Direct Share slots, Clear Direct Share, restore behavior, theme modes, and revised information architecture have been physically validated.
+The v0.3 routing core, in-place signing upgrade, ordinary share path, independent regular-share defaults, live prompt regeneration, two explicit Direct Share slots, Clear Direct Share, restore behavior, Full Application Direct Share routing, duplicate-slot handling, Android chooser behavior, failure fallback, theme modes, and revised information architecture have been physically validated.
 
-The stacked UI/semantics branch may merge back into `feature/v0.3.0-direct-share-presets` after its validation-documentation head passes CI. Before final `main` merge/release, complete the combined-branch CI, explicit parser/JSON/chooser/failure-fallback regression checks as appropriate, and record the signed final-candidate workflow/signing metadata.
+The signed/device-tested application candidate is exact commit `5b48c102b4ed6f98d37aefbcfcef2f1838c47ccf`. The subsequent closeout commit is documentation-only and does not change application, build, manifest, routing, signing, or workflow behavior. After this documentation head passes normal PR CI, PR #7 may be merged to `main`; the newest Android CI on `main` must then pass before the guarded `Android Release` workflow publishes `v0.3.0`.
 
 ---
 
