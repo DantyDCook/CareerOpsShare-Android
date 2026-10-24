@@ -13,6 +13,11 @@ object CareerOpsRequestRenderer {
         appendLine("source_id: ${request.job.sourceId}")
         appendLine("job_id: ${request.job.jobId ?: "unknown"}")
         appendLine("canonical_url: ${request.job.canonicalUrl ?: "none"}")
+        CareerOpsActionInstructions.forAction(request.action)?.let { instructions ->
+            appendLine()
+            appendLine("Execution requirements:")
+            appendLine(instructions)
+        }
         appendLine()
         appendLine("Shared content:")
         if (request.job.rawSharedContent.isNotBlank()) {
@@ -26,6 +31,9 @@ object CareerOpsRequestRenderer {
         append("{\n")
         append("  \"schema_version\": \"${escape(request.schemaVersion)}\",\n")
         append("  \"action\": \"${escape(request.action.id)}\",\n")
+        CareerOpsActionInstructions.forAction(request.action)?.let { instructions ->
+            append("  \"execution_instructions\": \"${escape(instructions)}\",\n")
+        }
         append("  \"job\": {\n")
         append("    \"source\": \"${escape(request.job.source)}\",\n")
         append("    \"source_id\": \"${escape(request.job.sourceId)}\",\n")
