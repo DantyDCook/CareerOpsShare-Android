@@ -12,7 +12,6 @@ The same logical request can be rendered as structured text for a conversational
 CareerOpsRequest
 ├── schemaVersion
 ├── action
-├── executionInstructions (optional; build actions only)
 └── job
     ├── source
     ├── sourceId
@@ -26,7 +25,7 @@ CareerOpsRequest
 
 ## Supported actions in v0.2
 
-| ID | UI label |
+| ID | Required fulfillment |
 | --- | --- |
 | `ANALYZE` | Analyze / job fit only |
 | `ANALYZE_BUILD_STORE` | Analyze + required tailored resume (DOCX and PDF) + verified storage |
@@ -59,7 +58,7 @@ For conversational clients, the request begins with:
 Analyze this job using CareerOps:
 ```
 
-and follows it with structured fields and preserved shared content. For build actions, the renderer also adds an **Execution requirements** section ahead of the shared source content. The JSON renderer includes the same wording as an optional top-level `execution_instructions` string (escaped as JSON), leaving all existing required v1.0 fields and action IDs unchanged.
+and follows it with structured fields and preserved shared content. For build actions, the renderer also adds an **Execution requirements** section ahead of the shared source content. The JSON renderer includes the same wording as an optional top-level `execution_instructions` string (escaped as JSON), leaving all existing required v1.0 fields and action IDs unchanged. The guidance is derived from `action` during rendering; it is not a persisted `CareerOpsRequest` model property.
 
 The additional guidance is a **compatibility-oriented client hint** for conversational destinations, not a claim that the Android client runs a renderer or has completed persistence. Parsers that only accept an exact list of JSON keys should be updated to tolerate this optional extension; the canonical action semantics belong to CareerOps Engine. Neither a generated request nor an analysis response alone verifies that the artifacts were created.
 
