@@ -120,6 +120,70 @@ class ShareParserTest {
     }
 
     @Test
+    fun fullApplicationTextExplicitlyRequiresResumeAndCoverLetter() {
+        val intake = ShareParser.parse(null, "https://www.linkedin.com/jobs/view/4477082512/")
+        val request = CareerOpsRequest(
+            action = CareerOpsAction.ANALYZE_BUILD_STORE_COVER_LETTER,
+            job = intake
+        )
+
+        val rendered = CareerOpsRequestRenderer.toText(request)
+
+        assertTrue(rendered.startsWith("Analyze this job using CareerOps:"))
+        assertTrue(rendered.contains("action: ANALYZE_BUILD_STORE_COVER_LETTER"))
+        assertTrue(rendered.contains("job_id: 4477082512"))
+        assertTrue(rendered.contains("ATS-readable resume and render BOTH DOCX and PDF"))
+        assertTrue(rendered.contains("cover letter and render BOTH DOCX and PDF"))
+        assertTrue(rendered.contains("Mark the package PARTIAL"))
+        assertTrue(rendered.contains("without separate explicit authorization"))
+    }
+
+    @Test
+    fun buildAndStoreRequiresResumeButNotCoverLetter() {
+        val intake = ShareParser.parse(null, "https://www.linkedin.com/jobs/view/4477082512/")
+        val request = CareerOpsRequest(
+            action = CareerOpsAction.ANALYZE_BUILD_STORE,
+            job = intake
+        )
+
+        val rendered = CareerOpsRequestRenderer.toText(request)
+
+        assertTrue(rendered.contains("ATS-readable resume and render BOTH DOCX and PDF"))
+        assertFalse(rendered.contains("matching, evidence-grounded cover letter"))
+        assertTrue(rendered.contains("Mark the package PARTIAL"))
+    }
+
+    @Test
+    fun fullApplicationJsonIncludesExplicitBuildRequirements() {
+        val intake = ShareParser.parse(null, "https://www.linkedin.com/jobs/view/4477082512/")
+        val request = CareerOpsRequest(
+            action = CareerOpsAction.ANALYZE_BUILD_STORE_COVER_LETTER,
+            job = intake
+        )
+
+        val rendered = CareerOpsRequestRenderer.toJson(request)
+
+        assertTrue(rendered.contains("\\"schema_version\\": \\"1.0\\""))
+        assertTrue(rendered.contains("\\"action\\": \\"ANALYZE_BUILD_STORE_COVER_LETTER\\""))
+        assertTrue(rendered.contains("\\"execution_instructions\\": \\""))
+        assertTrue(rendered.contains("ATS-readable resume and render BOTH DOCX and PDF"))
+        assertTrue(rendered.contains("cover letter and render BOTH DOCX and PDF"))
+        assertTrue(rendered.contains("\\"job\\": {"))
+    }
+
+    @Test
+    fun analyzeOnlyRequestsNoBuildArtifacts() {
+        val intake = ShareParser.parse(null, "https://www.linkedin.com/jobs/view/4477082512/")
+        val request = CareerOpsRequest(
+            action = CareerOpsAction.ANALYZE,
+            job = intake
+        )
+
+        assertFalse(CareerOpsRequestRenderer.toText(request).contains("Execution requirements:"))
+        assertFalse(CareerOpsRequestRenderer.toJson(request).contains("execution_instructions"))
+    }
+
+    @Test
     fun jsonRendererProducesStructuredContract() {
         val intake = ShareParser.parse(
             "Role \"A\"",
