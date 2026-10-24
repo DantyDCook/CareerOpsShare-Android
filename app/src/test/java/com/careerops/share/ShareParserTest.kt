@@ -199,7 +199,7 @@ class ShareParserTest {
         assertTrue(json.contains("\"schema_version\": \"1.0\""))
         assertTrue(json.contains("\"action\": \"ANALYZE\""))
         assertTrue(json.contains("\"job_id\": \"abc123\""))
-        assertTrue(json.contains("Role \\"A\\""))
+        assertTrue(json.contains("Role \\\"A\\\""))
         assertFalse(json.contains("\"destination\""))
     }
 }
