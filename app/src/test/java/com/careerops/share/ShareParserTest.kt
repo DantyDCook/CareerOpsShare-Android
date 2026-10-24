@@ -163,12 +163,12 @@ class ShareParserTest {
 
         val rendered = CareerOpsRequestRenderer.toJson(request)
 
-        assertTrue(rendered.contains("\\"schema_version\\": \\"1.0\\""))
-        assertTrue(rendered.contains("\\"action\\": \\"ANALYZE_BUILD_STORE_COVER_LETTER\\""))
-        assertTrue(rendered.contains("\\"execution_instructions\\": \\""))
+        assertTrue(rendered.contains("\"schema_version\": \"1.0\""))
+        assertTrue(rendered.contains("\"action\": \"ANALYZE_BUILD_STORE_COVER_LETTER\""))
+        assertTrue(rendered.contains("\"execution_instructions\": \""))
         assertTrue(rendered.contains("ATS-readable resume and render BOTH DOCX and PDF"))
         assertTrue(rendered.contains("cover letter and render BOTH DOCX and PDF"))
-        assertTrue(rendered.contains("\\"job\\": {"))
+        assertTrue(rendered.contains("\"job\": {"))
     }
 
     @Test
@@ -199,7 +199,7 @@ class ShareParserTest {
         assertTrue(json.contains("\"schema_version\": \"1.0\""))
         assertTrue(json.contains("\"action\": \"ANALYZE\""))
         assertTrue(json.contains("\"job_id\": \"abc123\""))
-        assertTrue(json.contains("Role \\\"A\\\""))
+        assertTrue(json.contains("Role \\"A\\""))
         assertFalse(json.contains("\"destination\""))
     }
 }
