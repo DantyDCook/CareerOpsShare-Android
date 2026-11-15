@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     name: Test and build debug APK
+    if: vars.LOCALCI_CI != 'enabled' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
 
     steps:
