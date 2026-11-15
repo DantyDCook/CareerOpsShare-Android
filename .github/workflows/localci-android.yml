@@ -1,0 +1,56 @@
+name: LocalCI Android build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    if: github.repository == 'DantyDCook/CareerOpsShare-Android'
+    runs-on: [self-hosted, linux, x64, local-ci, hyperv-ci]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Test, lint, and build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='localci-android-builder:installed'
+          expected='sha256:248d6dc390ef33e06c8978cde2793348dc0d9e5c21c945e89119d721e88492bc'
+          test "$(docker image inspect --format '{{.Id}}' "$image")" = "$expected"
+          mkdir -p "$RUNNER_TEMP/gradle-cache"
+          docker run --rm --pull=never --name "localci-careeropsshare-${GITHUB_RUN_ID}" \
+            --cpus=2 --memory=6g --memory-swap=6g --pids-limit=512 \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --user "$(id -u):$(id -g)" \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=1g \
+            -e HOME=/tmp -e GRADLE_USER_HOME=/gradle-cache \
+            -v "$GITHUB_WORKSPACE:/workspace:rw" \
+            -v "$RUNNER_TEMP/gradle-cache:/gradle-cache:rw" \
+            -w /workspace "$image" \
+            /opt/gradle-9.6.0/bin/gradle --no-daemon --max-workers=2 \
+              testDebugUnitTest lintDebug assembleDebug
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          mkdir -p dist
+          cp "$apk" "dist/CareerOpsShare-${GITHUB_SHA:0:12}-debug.apk"
+          (cd dist && sha256sum -- *.apk > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+      - name: Remove build container
+        if: always()
+        run: docker rm -f "localci-careeropsshare-${GITHUB_RUN_ID}" 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: careeropsshare-debug-${{ github.sha }}
+          path: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
+            app/build/test-results/testDebugUnitTest/*.xml
+            app/build/reports/lint-results-debug.xml
+          if-no-files-found: warn
+          retention-days: 30
