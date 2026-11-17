@@ -13,6 +13,16 @@ val releaseSigningConfigured = listOf(
     releaseKeyAlias,
     releaseKeyPassword,
 ).all { provider -> provider.isPresent && provider.get().isNotBlank() }
+val localciUnsigned = providers.gradleProperty("localciProtectedUnsignedBundle").orNull == "true"
+val localciVersionCode = providers.gradleProperty("localciVersionCode").orNull?.toIntOrNull()
+val localciVersionName = providers.gradleProperty("localciVersionName").orNull
+
+check(!localciUnsigned || !releaseSigningConfigured) {
+    "Protected unsigned bundle builds must not receive release signing credentials."
+}
+check(!localciUnsigned || (localciVersionCode != null && localciVersionCode > 0 && !localciVersionName.isNullOrBlank())) {
+    "Protected unsigned bundle builds require an allocated versionCode and versionName."
+}
 
 android {
     namespace = "com.careerops.share"
@@ -22,8 +32,8 @@ android {
         applicationId = "com.careerops.share"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = localciVersionCode ?: 5
+        versionName = localciVersionName ?: "0.3.0"
     }
 
     compileOptions {
@@ -75,7 +85,7 @@ val verifyReleaseSigningConfigured = tasks.register("verifyReleaseSigningConfigu
 }
 
 tasks.configureEach {
-    if (name == "assembleRelease" || name == "bundleRelease") {
+    if (name == "assembleRelease" || (name == "bundleRelease" && !localciUnsigned)) {
         dependsOn(verifyReleaseSigningConfigured)
     }
 }
