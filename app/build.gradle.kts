@@ -17,7 +17,8 @@ val releaseSigningConfigured = releaseSigningInputs.all { provider ->
     provider.isPresent && provider.get().isNotBlank()
 }
 val anyReleaseSigningInput = releaseSigningInputs.any { provider ->
-    provider.isPresent && provider.get().isNotBlank()
+    // Presence alone is forbidden in the protected unsigned path, even if empty.
+    provider.isPresent
 }
 val localciUnsigned = providers.gradleProperty("localciProtectedUnsignedBundle").orNull == "true"
 val localciVersionCode = providers.gradleProperty("localciVersionCode").orNull?.toIntOrNull()
