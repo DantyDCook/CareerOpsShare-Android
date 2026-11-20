@@ -7,12 +7,29 @@ val releaseStorePassword = providers.environmentVariable("CAREEROPS_RELEASE_STOR
 val releaseKeyAlias = providers.environmentVariable("CAREEROPS_RELEASE_KEY_ALIAS")
 val releaseKeyPassword = providers.environmentVariable("CAREEROPS_RELEASE_KEY_PASSWORD")
 
-val releaseSigningConfigured = listOf(
+val releaseSigningInputs = listOf(
     releaseStoreFile,
     releaseStorePassword,
     releaseKeyAlias,
     releaseKeyPassword,
-).all { provider -> provider.isPresent && provider.get().isNotBlank() }
+)
+val releaseSigningConfigured = releaseSigningInputs.all { provider ->
+    provider.isPresent && provider.get().isNotBlank()
+}
+val anyReleaseSigningInput = releaseSigningInputs.any { provider ->
+    // Presence alone is forbidden in the protected unsigned path, even if empty.
+    provider.isPresent
+}
+val localciUnsigned = providers.gradleProperty("localciProtectedUnsignedBundle").orNull == "true"
+val localciVersionCode = providers.gradleProperty("localciVersionCode").orNull?.toIntOrNull()
+val localciVersionName = providers.gradleProperty("localciVersionName").orNull
+
+check(!localciUnsigned || !anyReleaseSigningInput) {
+    "Protected unsigned bundle builds must not receive any release signing credentials, including a partial configuration."
+}
+check(!localciUnsigned || (localciVersionCode != null && localciVersionCode > 0 && !localciVersionName.isNullOrBlank())) {
+    "Protected unsigned bundle builds require an allocated versionCode and versionName."
+}
 
 android {
     namespace = "com.careerops.share"
@@ -22,8 +39,14 @@ android {
         applicationId = "com.careerops.share"
         minSdk = 26
         targetSdk = 36
+        // Preserve literal defaults for existing hosted release-workflow version readers.
         versionCode = 5
         versionName = "0.3.0"
+        // Protected LocalCI-only unsigned bundle versions are allocated by the publisher.
+        if (localciUnsigned) {
+            versionCode = requireNotNull(localciVersionCode)
+            versionName = requireNotNull(localciVersionName)
+        }
     }
 
     compileOptions {
@@ -75,7 +98,7 @@ val verifyReleaseSigningConfigured = tasks.register("verifyReleaseSigningConfigu
 }
 
 tasks.configureEach {
-    if (name == "assembleRelease" || name == "bundleRelease") {
+    if (name == "assembleRelease" || (name == "bundleRelease" && !localciUnsigned)) {
         dependsOn(verifyReleaseSigningConfigured)
     }
 }
