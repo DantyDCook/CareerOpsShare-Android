@@ -19,6 +19,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Unit tests, lint and unsigned Android artifacts
+        id: build
         env:
           PROFILE: "{\"gradle\": \"9.6.0\", \"gradle_heap_mb\": 2048, \"gradle_workers\": 1, \"tasks\": [\"testDebugUnitTest\", \"testReleaseUnitTest\", \"lintDebug\", \"lintRelease\", \"assembleDebug\", \"bundleRelease\"], \"properties\": [\"localciProtectedUnsignedBundle=true\", \"kotlin.compiler.execution.strategy=in-process\"], \"stage_scripts\": [], \"post_scripts\": [], \"version_property\": \"localciVersionCode\", \"name_property\": \"localciVersionName\"}"
           PIN: "sha256:248d6dc390ef33e06c8978cde2793348dc0d9e5c21c945e89119d721e88492bc"
@@ -50,6 +51,9 @@ jobs:
                   (".SF", ".RSA", ".DSA", ".EC")) for n in bundle.namelist()), "CI bundle must be unsigned"
           PY
       - name: Retain and verify CI archive
+        if: always() && steps.build.outcome != 'skipped' && steps.build.outcome != ''
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
         shell: bash
         run: |
           set -euo pipefail
@@ -63,22 +67,29 @@ jobs:
           trap 'rm -r -- "$stage"' EXIT
           mkdir "$stage/payload"
           # Never follow a symlink supplied by repository code or the guest build.
-          for dir in app app/build; do test -d "$dir" && test ! -L "$dir"; done
-          test -z "$(find app/build -type l -print -quit)"
+          for dir in app app/build; do [[ ! -L "$dir" ]]; done
+          if [ -d app/build ]; then test -z "$(find app/build -type l -print -quit)"; fi
           if [ -e CHANGELOG.md ]; then test -f CHANGELOG.md && test ! -L CHANGELOG.md; fi
+          shopt -s nullglob
           for f in app/build/outputs/apk/debug/app-debug.apk app/build/outputs/bundle/release/app-release.aab; do
-            test -s "$f"
-            cp -- "$f" "$stage/payload/"
+            if [ "$BUILD_OUTCOME" = success ]; then test -s "$f"; fi
+            if [ -s "$f" ]; then cp -- "$f" "$stage/payload/"; fi
           done
           for variant in testDebugUnitTest testReleaseUnitTest; do
-            compgen -G "app/build/test-results/$variant/TEST-*.xml" > /dev/null
+            reports=(app/build/test-results/"$variant"/TEST-*.xml)
+            if [ "$BUILD_OUTCOME" = success ]; then (( ${#reports[@]} )); fi
+            for f in "${reports[@]}"; do
+              install -D -m 600 -- "$f" "$stage/payload/$variant/${f##*/}"
+            done
           done
-          cp -r -- app/build/test-results "$stage/payload/"
-          cp -- app/build/reports/lint-results-{debug,release}.xml "$stage/payload/"
+          for f in app/build/reports/lint-results-{debug,release}.xml; do
+            if [ "$BUILD_OUTCOME" = success ]; then test -s "$f"; fi
+            if [ -s "$f" ]; then cp -- "$f" "$stage/payload/"; fi
+          done
           for f in CHANGELOG.md app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk; do
             if [ -f "$f" ]; then cp -- "$f" "$stage/payload/"; fi
           done
-          printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$stage/payload/PROVENANCE.txt"
+          printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\nbuild_outcome=%s\n'             "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$BUILD_OUTCOME" > "$stage/payload/PROVENANCE.txt"
           (cd "$stage/payload" && find . -type f -print0 | sort -z | xargs -0 sha256sum > "$stage/input-sums")
           mv -- "$stage/input-sums" "$stage/payload/SHA256SUMS.txt"
           tar -cf "$stage/artifacts.tar" -C "$stage/payload" .
