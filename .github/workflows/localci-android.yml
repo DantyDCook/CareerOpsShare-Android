@@ -2,6 +2,7 @@ name: LocalCI Android build
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: [main]
 
@@ -10,7 +11,7 @@ permissions:
 
 jobs:
   debug:
-    if: github.repository == 'DantyDCook/CareerOpsShare-Android'
+    if: github.repository == 'DantyDCook/CareerOpsShare-Android' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, x64, local-ci, hyperv-ci]
     timeout-minutes: 45
     steps:
